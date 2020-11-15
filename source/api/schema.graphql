@@ -1,0 +1,735 @@
+enum Status {
+  not_started
+  started
+  completed
+  suspended
+  postponed
+}
+
+type FeedConfig @aws_iam @aws_api_key {
+  providerId: String
+  feedId: String
+  url: String
+  type: String
+  operation: String
+  providerkey: String
+}
+
+type Sport @aws_iam @aws_api_key {
+  id: ID!
+  name: String!
+  competitions(filter: ModelCompetitionFilterInput, sortDirection: ModelSortDirection, limit: Int, nextToken: String): ModelCompetitionConnection
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  feedConfig: FeedConfig @aws_iam
+}
+
+type Season @aws_iam @aws_api_key {
+  id: ID!
+  name: String!
+  year: String!
+  competition: Competition
+  competitionId: ID!
+  startDate: AWSDate!
+  endDate: AWSDate!
+  status: Status!
+  stages(name: ModelStringKeyConditionInput, filter: ModelStageFilterInput, sortDirection: ModelSortDirection, limit: Int, nextToken: String): ModelStageConnection
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  feedConfig: FeedConfig @aws_iam
+}
+
+type Competition @aws_iam @aws_api_key {
+  id: ID!
+  name: String!
+  type: String!
+  sport: Sport
+  sportId: ID!
+  seasons(year: ModelStringKeyConditionInput, filter: ModelSeasonFilterInput, sortDirection: ModelSortDirection, limit: Int, nextToken: String): ModelSeasonConnection
+  country: String
+  countryCode: String
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  feedConfig: FeedConfig @aws_iam
+}
+
+type Stage @aws_iam @aws_api_key {
+  id: ID!
+  startDate: AWSDate!
+  endDate: AWSDate!
+  name: String!
+  sequence: Int
+  season: Season
+  seasonId: ID!
+  games(filter: ModelGameFilterInput, sortDirection: ModelSortDirection, limit: Int, nextToken: String): ModelGameConnection
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  feedConfig: FeedConfig @aws_iam
+}
+
+type Venue @aws_iam @aws_api_key {
+  id: ID!
+  name: String!
+  capacity: Int
+  city: String
+  country: String
+  surface: String
+  roofType: String
+}
+
+type Competitor @aws_iam @aws_api_key {
+  id: ID!
+  name: String!
+  country: String
+  countryCode: String
+  alias: String
+}
+
+type Game @aws_iam @aws_api_key {
+  id: ID!
+  stage: Stage
+  stageId: ID!
+  plannedKickoffTime: AWSDateTime!
+  venue: Venue
+  home: Competitor
+  away: Competitor
+  gameStatus: GameStatus
+  scoringDrives: [ScoringDrive]
+  events(createdAt: ModelStringKeyConditionInput, filter: ModelGameEventFilterInput, sortDirection: ModelSortDirection, limit: Int, nextToken: String): ModelGameEventConnection
+  stats: AWSJSON
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  feedConfig: FeedConfig @aws_iam
+}
+
+type GameStatus @aws_iam @aws_api_key {
+  status: Status!
+  clock: String
+  clockStoppageAnnounced: String
+  clockStoppagePlayer: String
+  winner: Competitor
+  aggregateAwayScore: Int
+  aggregateHomeScore: Int
+  aggregateWinner: Competitor
+  awayNormaltimeScore: Int
+  awayOvertimeScore: Int
+  awayScore: Int
+  homeNormaltimeScore: Int
+  homeOvertimeScore: Int
+  homeScore: Int
+  possession: String
+  location: String
+  play: String
+  sections: [GameSection]
+}
+
+type GameSection @aws_iam @aws_api_key {
+  awayScore: Int
+  homeScore: Int
+  sequence: Int!
+  name: String!
+  type: String
+  stats: AWSJSON
+}
+
+type ScoringDrive @aws_iam @aws_api_key {
+  scoreName: String!
+  score: Int!
+  playsCount: Int
+  duration: String
+  quarter: String
+  gain: Int
+  penalty: Int
+  team: Competitor!
+}
+
+type GameEvent  @aws_iam @aws_api_key {
+  id: ID!
+  game: Game
+  gameId: ID!
+  type: String
+  clock: String
+  section: GameSection
+  competitor: Competitor
+  homeScore: Int
+  awayScore: Int
+  scorer: Player
+  assist: Player
+  playerIn: Player
+  playerOut: Player
+  commentary: String
+  players: [Player]
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type Player @aws_iam @aws_api_key {
+  id: ID!
+  name: String!
+  jersey: Int
+  position: String
+  country: String
+  countryCode: String
+}
+
+enum ModelSortDirection {
+  ASC
+  DESC
+}
+
+input FeedConfigInput {
+  providerId: String
+  feedId: String
+  url: String
+  type: String
+  operation: String
+  providerkey: String
+}
+
+type ModelSportConnection @aws_api_key @aws_iam {
+  items: [Sport]
+  nextToken: String
+}
+
+input ModelStringInput {
+  ne: String
+  eq: String
+  le: String
+  lt: String
+  ge: String
+  gt: String
+  contains: String
+  notContains: String
+  between: [String]
+  beginsWith: String
+  attributeExists: Boolean
+  attributeType: ModelAttributeTypes
+  size: ModelSizeInput
+}
+
+input ModelIDInput {
+  ne: ID
+  eq: ID
+  le: ID
+  lt: ID
+  ge: ID
+  gt: ID
+  contains: ID
+  notContains: ID
+  between: [ID]
+  beginsWith: ID
+  attributeExists: Boolean
+  attributeType: ModelAttributeTypes
+  size: ModelSizeInput
+}
+
+input ModelIntInput {
+  ne: Int
+  eq: Int
+  le: Int
+  lt: Int
+  ge: Int
+  gt: Int
+  between: [Int]
+  attributeExists: Boolean
+  attributeType: ModelAttributeTypes
+}
+
+input ModelFloatInput {
+  ne: Float
+  eq: Float
+  le: Float
+  lt: Float
+  ge: Float
+  gt: Float
+  between: [Float]
+  attributeExists: Boolean
+  attributeType: ModelAttributeTypes
+}
+
+input ModelBooleanInput {
+  ne: Boolean
+  eq: Boolean
+  attributeExists: Boolean
+  attributeType: ModelAttributeTypes
+}
+
+input ModelSizeInput {
+  ne: Int
+  eq: Int
+  le: Int
+  lt: Int
+  ge: Int
+  gt: Int
+  between: [Int]
+}
+
+input ModelSportFilterInput {
+  id: ModelIDInput
+  name: ModelStringInput
+  and: [ModelSportFilterInput]
+  or: [ModelSportFilterInput]
+  not: ModelSportFilterInput
+}
+
+enum ModelAttributeTypes {
+  binary
+  binarySet
+  bool
+  list
+  map
+  number
+  numberSet
+  string
+  stringSet
+  _null
+}
+
+type Query {
+  getGameEvent(id: ID!): GameEvent @aws_api_key @aws_iam
+  listGameEvents(filter: ModelGameEventFilterInput, limit: Int, nextToken: String): ModelGameEventConnection @aws_api_key @aws_iam
+  getSport(id: ID!): Sport @aws_api_key @aws_iam
+  listSports(filter: ModelSportFilterInput, limit: Int, nextToken: String): ModelSportConnection @aws_api_key @aws_iam
+  getSeason(id: ID!): Season @aws_api_key @aws_iam
+  listSeasons(filter: ModelSeasonFilterInput, limit: Int, nextToken: String): ModelSeasonConnection @aws_api_key @aws_iam
+  getCompetition(id: ID!): Competition @aws_api_key @aws_iam
+  listCompetitions(filter: ModelCompetitionFilterInput, limit: Int, nextToken: String): ModelCompetitionConnection @aws_api_key @aws_iam
+  getStage(id: ID!): Stage @aws_api_key @aws_iam
+  listStages(filter: ModelStageFilterInput, limit: Int, nextToken: String): ModelStageConnection @aws_api_key @aws_iam
+  getGame(id: ID!): Game @aws_api_key @aws_iam
+  listGames(filter: ModelGameFilterInput, limit: Int, nextToken: String): ModelGameConnection @aws_api_key @aws_iam
+}
+
+input CreateSportInput {
+  id: ID
+  name: String!
+  feedConfig: FeedConfigInput
+}
+
+input UpdateSportInput {
+  id: ID!
+  name: String
+  feedConfig: FeedConfigInput
+}
+
+input DeleteSportInput {
+  id: ID
+}
+
+type Mutation {
+  createSport(input: CreateSportInput!, condition: ModelSportConditionInput): Sport @aws_iam
+  updateSport(input: UpdateSportInput!, condition: ModelSportConditionInput): Sport @aws_iam
+  deleteSport(input: DeleteSportInput!, condition: ModelSportConditionInput): Sport @aws_iam
+  createSeason(input: CreateSeasonInput!, condition: ModelSeasonConditionInput): Season @aws_iam
+  updateSeason(input: UpdateSeasonInput!, condition: ModelSeasonConditionInput): Season @aws_iam
+  deleteSeason(input: DeleteSeasonInput!, condition: ModelSeasonConditionInput): Season @aws_iam
+  createCompetition(input: CreateCompetitionInput!, condition: ModelCompetitionConditionInput): Competition @aws_iam
+  updateCompetition(input: UpdateCompetitionInput!, condition: ModelCompetitionConditionInput): Competition @aws_iam
+  deleteCompetition(input: DeleteCompetitionInput!, condition: ModelCompetitionConditionInput): Competition @aws_iam
+  createStage(input: CreateStageInput!, condition: ModelStageConditionInput): Stage @aws_iam
+  updateStage(input: UpdateStageInput!, condition: ModelStageConditionInput): Stage @aws_iam
+  deleteStage(input: DeleteStageInput!, condition: ModelStageConditionInput): Stage @aws_iam
+  createGame(input: CreateGameInput!, condition: ModelGameConditionInput): Game @aws_iam
+  updateGame(input: UpdateGameInput!, condition: ModelGameConditionInput): Game @aws_iam
+  deleteGame(input: DeleteGameInput!, condition: ModelGameConditionInput): Game @aws_iam
+  createGameEvent(input: CreateGameEventInput!, condition: ModelGameEventConditionInput): GameEvent @aws_iam
+  updateGameEvent(input: UpdateGameEventInput!, condition: ModelGameEventConditionInput): GameEvent @aws_iam
+  deleteGameEvent(input: DeleteGameEventInput!, condition: ModelGameEventConditionInput): GameEvent @aws_iam
+}
+
+input ModelSportConditionInput {
+  name: ModelStringInput
+  and: [ModelSportConditionInput]
+  or: [ModelSportConditionInput]
+  not: ModelSportConditionInput
+}
+
+type Subscription {
+  onCreateSport: Sport @aws_subscribe(mutations: ["createSport"]) @aws_iam
+  onUpdateSport: Sport @aws_subscribe(mutations: ["updateSport"]) @aws_iam
+  onDeleteSport: Sport @aws_subscribe(mutations: ["deleteSport"]) @aws_iam
+  onCreateSeason: Season @aws_subscribe(mutations: ["createSeason"]) @aws_iam
+  onUpdateSeason: Season @aws_subscribe(mutations: ["updateSeason"]) @aws_iam
+  onDeleteSeason: Season @aws_subscribe(mutations: ["deleteSeason"]) @aws_iam
+  onCreateCompetition: Competition @aws_subscribe(mutations: ["createCompetition"]) @aws_iam
+  onUpdateCompetition: Competition @aws_subscribe(mutations: ["updateCompetition"]) @aws_iam
+  onDeleteCompetition: Competition @aws_subscribe(mutations: ["deleteCompetition"]) @aws_iam
+  onCreateStage: Stage @aws_subscribe(mutations: ["createStage"]) @aws_iam
+  onUpdateStage: Stage @aws_subscribe(mutations: ["updateStage"]) @aws_iam
+  onDeleteStage: Stage @aws_subscribe(mutations: ["deleteStage"]) @aws_iam
+  onCreateGame: Game @aws_subscribe(mutations: ["createGame"]) @aws_iam
+  onUpdateGame: Game @aws_subscribe(mutations: ["updateGame"]) @aws_iam
+  onDeleteGame: Game @aws_subscribe(mutations: ["deleteGame"]) @aws_iam
+  onCreateGameEvent(gameId:ID): GameEvent @aws_subscribe(mutations: ["createGameEvent"])
+  onUpdateGameEvent: GameEvent @aws_subscribe(mutations: ["updateGameEvent"])
+  onDeleteGameEvent: GameEvent @aws_subscribe(mutations: ["deleteGameEvent"])
+}
+
+type ModelSeasonConnection @aws_api_key @aws_iam {
+  items: [Season]
+  nextToken: String
+}
+
+input ModelStatusInput {
+  eq: Status
+  ne: Status
+}
+
+input ModelSeasonFilterInput {
+  id: ModelIDInput
+  name: ModelStringInput
+  year: ModelStringInput
+  competitionId: ModelIDInput
+  startDate: ModelStringInput
+  endDate: ModelStringInput
+  status: ModelStatusInput
+  and: [ModelSeasonFilterInput]
+  or: [ModelSeasonFilterInput]
+  not: ModelSeasonFilterInput
+}
+
+input CreateSeasonInput {
+  id: ID
+  name: String!
+  year: String!
+  competitionId: ID!
+  startDate: AWSDate!
+  endDate: AWSDate!
+  status: Status!
+  feedConfig: FeedConfigInput
+}
+
+input UpdateSeasonInput {
+  id: ID!
+  name: String
+  year: String
+  competitionId: ID
+  startDate: AWSDate
+  endDate: AWSDate
+  status: Status
+  feedConfig: FeedConfigInput
+}
+
+input DeleteSeasonInput {
+  id: ID
+}
+
+input ModelSeasonConditionInput {
+  name: ModelStringInput
+  year: ModelStringInput
+  competitionId: ModelIDInput
+  startDate: ModelStringInput
+  endDate: ModelStringInput
+  status: ModelStatusInput
+  and: [ModelSeasonConditionInput]
+  or: [ModelSeasonConditionInput]
+  not: ModelSeasonConditionInput
+}
+
+type ModelCompetitionConnection @aws_api_key @aws_iam {
+  items: [Competition]
+  nextToken: String
+}
+
+input ModelCompetitionFilterInput {
+  id: ModelIDInput
+  name: ModelStringInput
+  type: ModelStringInput
+  sportId: ModelIDInput
+  country: ModelStringInput
+  countryCode: ModelStringInput
+  and: [ModelCompetitionFilterInput]
+  or: [ModelCompetitionFilterInput]
+  not: ModelCompetitionFilterInput
+}
+
+input CreateCompetitionInput {
+  id: ID
+  name: String!
+  type: String!
+  sportId: ID!
+  country: String
+  countryCode: String
+  feedConfig: FeedConfigInput
+}
+
+input UpdateCompetitionInput {
+  id: ID!
+  name: String
+  type: String
+  sportId: ID
+  country: String
+  countryCode: String
+  feedConfig: FeedConfigInput
+}
+
+input DeleteCompetitionInput {
+  id: ID
+}
+
+input ModelCompetitionConditionInput {
+  name: ModelStringInput
+  type: ModelStringInput
+  sportId: ModelIDInput
+  country: ModelStringInput
+  countryCode: ModelStringInput
+  and: [ModelCompetitionConditionInput]
+  or: [ModelCompetitionConditionInput]
+  not: ModelCompetitionConditionInput
+}
+
+type ModelStageConnection @aws_api_key @aws_iam {
+  items: [Stage]
+  nextToken: String
+}
+
+input ModelStageFilterInput {
+  id: ModelIDInput
+  startDate: ModelStringInput
+  endDate: ModelStringInput
+  name: ModelStringInput
+  sequence: ModelIntInput
+  seasonId: ModelIDInput
+  and: [ModelStageFilterInput]
+  or: [ModelStageFilterInput]
+  not: ModelStageFilterInput
+}
+
+input CreateStageInput {
+  id: ID
+  startDate: AWSDate!
+  endDate: AWSDate!
+  name: String!
+  sequence: Int
+  seasonId: ID!
+  feedConfig: FeedConfigInput
+}
+
+input UpdateStageInput {
+  id: ID!
+  startDate: AWSDate
+  endDate: AWSDate
+  name: String
+  sequence: Int
+  seasonId: ID
+  feedConfig: FeedConfigInput
+}
+
+input DeleteStageInput {
+  id: ID
+}
+
+input ModelStageConditionInput {
+  startDate: ModelStringInput
+  endDate: ModelStringInput
+  name: ModelStringInput
+  sequence: ModelIntInput
+  seasonId: ModelIDInput
+  and: [ModelStageConditionInput]
+  or: [ModelStageConditionInput]
+  not: ModelStageConditionInput
+}
+
+input VenueInput {
+  id: ID!
+  name: String!
+  capacity: Int
+  city: String
+  country: String
+  surface: String
+  roofType: String
+}
+
+input CompetitorInput {
+  id: ID!
+  name: String!
+  country: String
+  countryCode: String
+  alias: String
+}
+
+input GameStatusInput {
+  status: Status!
+  clock: String
+  clockStoppageAnnounced: String
+  clockStoppagePlayer: String
+  winner: CompetitorInput
+  aggregateAwayScore: Int
+  aggregateHomeScore: Int
+  aggregateWinner: CompetitorInput
+  awayNormaltimeScore: Int
+  awayOvertimeScore: Int
+  awayScore: Int
+  homeNormaltimeScore: Int
+  homeOvertimeScore: Int
+  homeScore: Int
+  possession: String
+  location: String
+  play: String
+  sections: [GameSectionInput]
+}
+
+input GameSectionInput {
+  awayScore: Int
+  homeScore: Int
+  sequence: Int!
+  name: String!
+  type: String
+  stats: AWSJSON
+}
+
+input ScoringDriveInput {
+  scoreName: String!
+  score: Int!
+  playsCount: Int
+  duration: String
+  quarter: String
+  gain: Int
+  penalty: Int
+  team: CompetitorInput!
+}
+
+type ModelGameConnection @aws_api_key @aws_iam {
+  items: [Game]
+  nextToken: String
+}
+
+input ModelGameFilterInput {
+  id: ModelIDInput
+  stageId: ModelIDInput
+  plannedKickoffTime: ModelStringInput
+  stats: ModelStringInput
+  and: [ModelGameFilterInput]
+  or: [ModelGameFilterInput]
+  not: ModelGameFilterInput
+}
+
+input CreateGameInput {
+  id: ID
+  stageId: ID!
+  plannedKickoffTime: AWSDateTime!
+  venue: VenueInput
+  home: CompetitorInput
+  away: CompetitorInput
+  gameStatus: GameStatusInput
+  scoringDrives: [ScoringDriveInput]
+  stats: AWSJSON
+  feedConfig: FeedConfigInput
+}
+
+input UpdateGameInput {
+  id: ID!
+  stageId: ID
+  plannedKickoffTime: AWSDateTime
+  venue: VenueInput
+  home: CompetitorInput
+  away: CompetitorInput
+  gameStatus: GameStatusInput
+  scoringDrives: [ScoringDriveInput]
+  stats: AWSJSON
+  feedConfig: FeedConfigInput
+}
+
+input DeleteGameInput {
+  id: ID
+}
+
+input ModelGameConditionInput {
+  stageId: ModelIDInput
+  plannedKickoffTime: ModelStringInput
+  stats: ModelStringInput
+  and: [ModelGameConditionInput]
+  or: [ModelGameConditionInput]
+  not: ModelGameConditionInput
+}
+
+input PlayerInput {
+  id: ID!
+  name: String!
+  jersey: Int
+  position: String
+  country: String
+  countryCode: String
+}
+
+type ModelGameEventConnection {
+  items: [GameEvent]
+  nextToken: String
+}
+
+input ModelGameEventFilterInput {
+  id: ModelIDInput
+  gameId: ModelIDInput
+  type: ModelStringInput
+  clock: ModelStringInput
+  homeScore: ModelIntInput
+  awayScore: ModelIntInput
+  commentary: ModelStringInput
+  createdAt: ModelStringInput
+  and: [ModelGameEventFilterInput]
+  or: [ModelGameEventFilterInput]
+  not: ModelGameEventFilterInput
+}
+
+input CreateGameEventInput {
+  id: ID
+  gameId: ID!
+  type: String
+  clock: String
+  section: GameSectionInput
+  competitor: CompetitorInput
+  homeScore: Int
+  awayScore: Int
+  scorer: PlayerInput
+  assist: PlayerInput
+  playerIn: PlayerInput
+  playerOut: PlayerInput
+  commentary: String
+  players: [PlayerInput]
+  createdAt: AWSDateTime
+}
+
+input UpdateGameEventInput {
+  id: ID!
+  gameId: ID
+  type: String
+  clock: String
+  section: GameSectionInput
+  competitor: CompetitorInput
+  homeScore: Int
+  awayScore: Int
+  scorer: PlayerInput
+  assist: PlayerInput
+  playerIn: PlayerInput
+  playerOut: PlayerInput
+  commentary: String
+  players: [PlayerInput]
+  createdAt: AWSDateTime
+}
+
+input DeleteGameEventInput {
+  id: ID
+}
+
+input ModelGameEventConditionInput {
+  gameId: ModelIDInput
+  type: ModelStringInput
+  clock: ModelStringInput
+  homeScore: ModelIntInput
+  awayScore: ModelIntInput
+  commentary: ModelStringInput
+  createdAt: ModelStringInput
+  and: [ModelGameEventConditionInput]
+  or: [ModelGameEventConditionInput]
+  not: ModelGameEventConditionInput
+}
+
+input ModelStringKeyConditionInput {
+  eq: String
+  le: String
+  lt: String
+  ge: String
+  gt: String
+  between: [String]
+  beginsWith: String
+}

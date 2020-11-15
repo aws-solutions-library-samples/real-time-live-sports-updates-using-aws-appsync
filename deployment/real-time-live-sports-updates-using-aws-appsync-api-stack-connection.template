@@ -1,0 +1,475 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: (SO0102-api-stack-connection) - GraphQL Resolvers for RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+Metadata: {}
+Parameters:
+  APIKeyExpirationEpoch:
+    Type: Number
+    Description: The epoch time in seconds when the API Key should expire. Setting
+      this to 0 will default to 7 days from the deployment date. Setting this to -1
+      will not create an API Key.
+    Default: 0
+    MinValue: -1
+  CreateAPIKey:
+    Type: Number
+    Description: The boolean value to control if an API Key will be created or not.
+      The value of the property is automatically set by the CLI. If the value is set
+      to 0 no API Key will be created.
+    Default: 0
+    MinValue: 0
+    MaxValue: 1
+  env:
+    Type: String
+    Description: The environment name. e.g. Dev, Test, or Production
+    Default: NONE
+  S3DeploymentBucket:
+    Type: String
+    Description: The S3 bucket containing all deployment assets for the project.
+  S3DeploymentRootKey:
+    Type: String
+    Description: An S3 key relative to the S3DeploymentBucket that points to the root
+      of the deployment directory.
+  AppSyncApiId:
+    Type: String
+    Description: The id of the AppSync API associated with this project.
+  GetAttGraphQLAPIApiId:
+    Type: String
+    Description: GraphQLAPI - ApiId
+Resources:
+  SportcompetitionsResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - CompetitionDataSource
+            - Name
+      FieldName: competitions
+      TypeName: Sport
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Sport
+              - competitions
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Sport
+              - competitions
+              - res
+              - vtl
+  SeasoncompetitionResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - CompetitionDataSource
+            - Name
+      FieldName: competition
+      TypeName: Season
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Season
+              - competition
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Season
+              - competition
+              - res
+              - vtl
+  SeasonstagesResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - StageDataSource
+            - Name
+      FieldName: stages
+      TypeName: Season
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Season
+              - stages
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Season
+              - stages
+              - res
+              - vtl
+  CompetitionsportResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - SportDataSource
+            - Name
+      FieldName: sport
+      TypeName: Competition
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Competition
+              - sport
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Competition
+              - sport
+              - res
+              - vtl
+  CompetitionseasonsResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - SeasonDataSource
+            - Name
+      FieldName: seasons
+      TypeName: Competition
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Competition
+              - seasons
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Competition
+              - seasons
+              - res
+              - vtl
+  StageseasonResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - SeasonDataSource
+            - Name
+      FieldName: season
+      TypeName: Stage
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Stage
+              - season
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Stage
+              - season
+              - res
+              - vtl
+  StagegamesResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - GameDataSource
+            - Name
+      FieldName: games
+      TypeName: Stage
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Stage
+              - games
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Stage
+              - games
+              - res
+              - vtl
+  GamestageResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - StageDataSource
+            - Name
+      FieldName: stage
+      TypeName: Game
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Game
+              - stage
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Game
+              - stage
+              - res
+              - vtl
+  GameeventsResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - GameEventDataSource
+            - Name
+      FieldName: events
+      TypeName: Game
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Game
+              - events
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - Game
+              - events
+              - res
+              - vtl
+  GameEventgameResolver:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Ref: GetAttGraphQLAPIApiId
+      DataSourceName:
+        Fn::ImportValue:
+          Fn::Join:
+          - ":"
+          - - Ref: AppSyncApiId
+            - GetAtt
+            - GameDataSource
+            - Name
+      FieldName: game
+      TypeName: GameEvent
+      RequestMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - GameEvent
+              - game
+              - req
+              - vtl
+      ResponseMappingTemplateS3Location:
+        Fn::Sub:
+        - s3://${S3DeploymentBucket}/${S3DeploymentRootKey}/resolvers/${ResolverFileName}
+        - S3DeploymentBucket:
+            Ref: S3DeploymentBucket
+          S3DeploymentRootKey:
+            Ref: S3DeploymentRootKey
+          ResolverFileName:
+            Fn::Join:
+            - "."
+            - - GameEvent
+              - game
+              - res
+              - vtl
+Outputs: {}
+Mappings: {}
+Conditions:
+  HasEnvironmentParameter:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: env
+      - NONE

@@ -1,0 +1,32 @@
+{
+  "name": "GameSimulatorScheduler",
+  "version": "2.0.0",
+  "description": "Lambda function for scheduling simulated games data ingestion",
+  "main": "index.js",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "cross-fetch": "^3.0.4",
+    "graphql": "latest",
+    "graphql-tag": "latest",
+    "json-mapper-json": "latest"
+  },
+  "devDependencies": {
+    "aws-sdk-mock": "*",
+    "aws-sdk": "*",
+    "chai": "*",
+    "mocha": "*",
+    "nyc": "*",
+    "sinon": "*",
+    "sinon-chai": "*"
+  },
+  "scripts": {
+    "pretest": "npm install",
+    "test": "mocha lib/*.spec.js",
+    "build:init": "rm -rf package-lock.json && rm -rf dist && rm -rf node_modules",
+    "build:zip": "rm -rf package-lock.json && zip -rq --exclude=*tests* --exclude=*template.yml gamesimulator-scheduler-function.zip .",
+    "build:dist": "mkdir dist && mv gamesimulator-scheduler-function.zip dist/",
+    "build": "npm run build:init && npm install --production && npm run build:zip && npm run build:dist",
+    "coverage": "nyc npm test",
+    "local:test": "sam local invoke 'ExampleService' -e ./tests/event.json"
+  }
+}

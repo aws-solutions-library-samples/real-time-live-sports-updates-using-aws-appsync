@@ -1,0 +1,337 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0102-notifications-stack) - Lambda, DynamoDB and Pinpoint for RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+
+Metadata: {}
+Parameters:
+    SolutionId:
+        Type: String
+        Description: solution ID
+        AllowedPattern : "[a-zA-Z0-9]+"
+    env:
+        Type: String
+        Description: The environment name. e.g. Dev, Test, or Production
+        Default: NONE
+    RootStackName:
+        Type: String
+        Description: Root Stack Name
+        AllowedPattern : ".+"
+    S3DeploymentBucket:
+        Type: String
+        Description: The S3 bucket containing all deployment assets for the project.
+    S3DeploymentRootKey:
+        Type: String
+        Description: An S3 key relative to the S3DeploymentBucket that points to the root of the deployment directory.
+    GameStreamArn:
+        Type: String
+        Description: GameEvents DynamoDB Stream Arn
+        AllowedPattern : ".+"
+    PinpointApp:
+        Type: String
+        Description: Pinpoint App / Project ID
+        AllowedPattern : ".+"
+    DynamoDBBillingMode:
+        Type: String
+        Description: Option for DynamoDB tables with PAY_PER_REQUEST
+          or PROVISIONED billing modes.
+        Default: PAY_PER_REQUEST
+        AllowedValues:
+        - PAY_PER_REQUEST
+        - PROVISIONED
+    DynamoDBEnableServerSideEncryption:
+        Type: String
+        Description: Enable server side encryption powered by KMS.
+        Default: 'true'
+        AllowedValues:
+        - 'true'
+        - 'false'
+    DynamoDBEnablePointInTimeRecovery:
+        Type: String
+        Description: Whether to enable Point in Time Recovery on the table
+        Default: 'false'
+        AllowedValues:
+        - 'true'
+        - 'false'
+    DynamoDBModelTableReadIOPS:
+        Type: Number
+        Description: The number of read IOPS the table should support.
+        Default: 5
+    DynamoDBModelTableWriteIOPS:
+        Type: Number
+        Description: The number of write IOPS the table should support.
+        Default: 5
+Resources:
+  
+    #
+    # DynamoDB Notifications Metadata table
+    #
+    GameUpdatesNotificationsTable:
+        Type: AWS::DynamoDB::Table
+        Metadata:
+          cfn_nag:
+              rules_to_suppress:
+                  -
+                      id: W28
+                      reason: "Table name is constructed with stack name. On update, we need to keep the existing table name."
+        Properties:
+          TableName: !Sub "${SolutionId}-GameEventNotifications-${env}"
+          KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          TimeToLiveSpecification:
+            AttributeName: ttl
+            Enabled: true
+          StreamSpecification:
+            StreamViewType: NEW_AND_OLD_IMAGES
+          BillingMode:
+            Fn::If:
+            - ShouldUsePayPerRequestBilling
+            - PAY_PER_REQUEST
+            - Ref: AWS::NoValue
+          ProvisionedThroughput:
+            Fn::If:
+            - ShouldUsePayPerRequestBilling
+            - Ref: AWS::NoValue
+            - ReadCapacityUnits:
+                Ref: DynamoDBModelTableReadIOPS
+              WriteCapacityUnits:
+                Ref: DynamoDBModelTableWriteIOPS
+          SSESpecification:
+            SSEEnabled: !If [ShouldUseServerSideEncryption, true, false]
+          PointInTimeRecoverySpecification:
+            Fn::If:
+            - ShouldUsePointInTimeRecovery
+            - PointInTimeRecoveryEnabled: true
+            - Ref: AWS::NoValue
+        DeletionPolicy: Delete
+
+
+    #
+    # Pinpoint
+    #
+    #PinpointApp:
+    #  Type: 'AWS::Pinpoint::App'
+    #  Properties:
+    #    Name: !Sub "${SolutionId}-GameEventNotifications-${env}"
+
+    #
+    # Lambda Consumer for GameEventStream
+    #
+    
+    GameUpdatesNotifications:
+      Type: AWS::Lambda::Function
+      Properties:
+        Description: SO0102 - Lambda function to notify end users of game live events
+        Environment:
+          Variables:
+            ENV:
+              Ref: env
+            REGION:
+              Ref: AWS::Region
+            PINPOINT_APPLICATION_ID: !Ref PinpointApp
+            PINPOINT_CONFIG_TABLE: !Ref GameUpdatesNotificationsTable
+        Handler: index.handler
+        FunctionName: !Sub ${RootStackName}-GameUpdatesNotifications-${env}
+        Role: !GetAtt 'GameUpdatesNotificationsRole.Arn'
+        Code:
+          S3Bucket: !Ref S3DeploymentBucket
+          S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "gameupdates-notifications-function.zip"]]
+        Runtime: nodejs12.x
+        Timeout: 60
+        MemorySize: 256
+    
+    GameUpdatesNotificationsRole:
+      Type: AWS::IAM::Role
+      Metadata:
+        cfn_nag:
+          rules_to_suppress:
+          - id: W11
+            reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+        Path: /
+        Policies:
+        - PolicyName: !Sub GameUpdatesNotifications-Function-Policy-${AWS::StackName}-${AWS::Region}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+            - Effect: Allow
+              Action:
+              - dynamodb:DescribeStream
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:ListStreams
+              Resource: !Ref GameStreamArn
+            - Effect: Allow
+              Action:
+              - dynamodb:PutItem
+              Resource: !GetAtt GameUpdatesNotificationsTable.Arn
+            - Effect: Allow
+              Action:
+                - "mobiletargeting:GetSegmentVersion"
+                - "mobiletargeting:GetSegment"
+                - "mobiletargeting:GetSegments"
+                - "mobiletargeting:GetSegmentVersions"
+                - "mobiletargeting:CreateSegment"
+                - "mobiletargeting:UpdateSegment"
+                - "mobiletargeting:CreateCampaign"
+                - "mobiletargeting:UpdateCampaign"
+                - "mobiletargeting:GetCampaign"
+                - "mobiletargeting:CreatePushTemplate"
+              Resource:
+                - !Sub ["arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}*", {ApplicationId: !Ref PinpointApp}]
+                - !Sub ["arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}", {ApplicationId: !Ref PinpointApp}]
+    
+    #
+    # Lambda Clensing for Campaigns and Segments
+    #
+    
+    GameUpdatesPinpointCleansingFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        Description: SO0102 - Lambda function to clean pinpoint segments and campaigns 
+        Environment:
+          Variables:
+            ENV:
+              Ref: env
+            REGION:
+              Ref: AWS::Region
+            PINPOINT_APPLICATION_ID: !Ref PinpointApp
+        Handler: index.handler
+        FunctionName: !Sub ${RootStackName}-GameUpdatesPinpointCleansing-${env}
+        Role: !GetAtt 'GameUpdatesPinpointCleansingFunctionRole.Arn'
+        Code:
+          S3Bucket: !Ref S3DeploymentBucket
+          S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "gameupdates-pinpoint-cleansing-function.zip"]]
+        Runtime: nodejs12.x
+        Timeout: 60
+        MemorySize: 256
+    
+    GameUpdatesPinpointCleansingFunctionRole:
+      Type: AWS::IAM::Role
+      Metadata:
+        cfn_nag:
+          rules_to_suppress:
+          - id: W11
+            reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+        Path: /
+        Policies:
+        - PolicyName: !Sub GameUpdatesPinpointCleansing-Function-Policy-${AWS::StackName}-${AWS::Region}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+            - Effect: Allow
+              Action:
+              - dynamodb:DescribeStream
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:ListStreams
+              Resource: !GetAtt 'GameUpdatesNotificationsTable.StreamArn'
+            - Effect: Allow
+              Action:
+              - dynamodb:DeleteItem
+              Resource: !GetAtt GameUpdatesNotificationsTable.Arn
+            - Effect: Allow
+              Action:
+                - "mobiletargeting:GetSegmentVersion"
+                - "mobiletargeting:GetSegment"
+                - "mobiletargeting:GetSegments"
+                - "mobiletargeting:GetSegmentVersions"
+                - "mobiletargeting:DeleteSegment"
+                - "mobiletargeting:UpdateSegment"
+                - "mobiletargeting:DeleteCampaign"
+                - "mobiletargeting:UpdateCampaign"
+                - "mobiletargeting:GetCampaign"
+              Resource:
+                - !Sub ["arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}*", {ApplicationId: !Ref PinpointApp}]
+                - !Sub ["arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}", {ApplicationId: !Ref PinpointApp}]
+  
+    #
+    # Lambda Event Sources Mappings
+    #
+    GameEventsSourceMapping:
+      Type: AWS::Lambda::EventSourceMapping
+      Properties:
+          BatchSize: 1 
+          Enabled: True
+          EventSourceArn: !Ref GameStreamArn
+          FunctionName: !GetAtt 'GameUpdatesNotifications.Arn'
+          StartingPosition: LATEST 
+    
+    GameEventsPinpointCleansingSourceMapping:
+      Type: AWS::Lambda::EventSourceMapping
+      Properties:
+          BatchSize: 1 
+          Enabled: True
+          EventSourceArn: !GetAtt 'GameUpdatesNotificationsTable.StreamArn'
+          FunctionName: !GetAtt 'GameUpdatesPinpointCleansingFunction.Arn'
+          StartingPosition: LATEST 
+
+Mappings: {}
+Conditions:
+  ShouldUsePayPerRequestBilling:
+    Fn::Equals:
+    - Ref: DynamoDBBillingMode
+    - PAY_PER_REQUEST
+  ShouldUsePointInTimeRecovery:
+    Fn::Equals:
+    - Ref: DynamoDBEnablePointInTimeRecovery
+    - 'true'
+  ShouldUseServerSideEncryption:
+    Fn::Equals:
+    - Ref: DynamoDBEnableServerSideEncryption
+    - 'true'
+    
+  #
+  # Outputs
+  #
+                
+Outputs:
+    GameUpdatesNotifications:
+      Value:
+        Fn::GetAtt:
+        - GameUpdatesNotifications
+        - Arn
+    
+    GameUpdatesPinpointCleansingFunction:
+      Value:
+        Fn::GetAtt:
+        - GameUpdatesPinpointCleansingFunction
+        - Arn
+        
+    PinpointApplicationId:
+      Value: !Ref PinpointApp
+    
+    GameUpdatesNotificationsTable:
+      Description: DynamoDB table name.
+      Value:
+        Ref: GameUpdatesNotificationsTable

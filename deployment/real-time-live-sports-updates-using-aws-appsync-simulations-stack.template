@@ -1,0 +1,603 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0102-simulations-stack) - AWS StepFunctions and Lambda  Resources for ingestion of simulated game events in RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+
+Metadata: {}
+Parameters:
+    SolutionId:
+        Type: String
+        Description: solution ID
+        AllowedPattern : "[a-zA-Z0-9]+"
+    env:
+        Type: String
+        Description: The environment name. e.g. Dev, Test, or Production
+        Default: NONE
+    RootStackName:
+        Type: String
+        Description: Root Stack Name
+        AllowedPattern : ".+"
+    S3DeploymentBucket:
+        Type: String
+        Description: The S3 bucket containing all deployment assets for the project.
+    S3DeploymentRootKey:
+        Type: String
+        Description: An S3 key relative to the S3DeploymentBucket that points to the root of the deployment directory.
+    EventStream:
+        Type: String
+        Description: EventStream name
+        AllowedPattern : ".+"
+    EventStreamArn:
+        Type: String
+        Description: EventStream Arn
+        AllowedPattern : ".+"
+    PreprocessConfigTableName:
+        Type: String
+        Description: DynamoDB Table Name for preprocess config
+        AllowedPattern : ".+"
+    PreprocessConfigDynamoDBTableArn:
+        Type: String
+        Description: DynamoDB Table ARN for preprocess config
+        AllowedPattern : ".+"
+    CloudWatchRule:
+        Type: String
+        Default: NONE
+        Description: "Schedule Expression for simulating games data"
+    WaitIntervalInSec:
+        Type: Number
+        Description: time interval between simulated game events (1 to 60) seconds
+        MinValue: 1
+        MaxValue: 60
+        Default: 10
+    GraphQLApiKey:
+        Type: String
+        Description: GraphQL ApiKey
+        AllowedPattern : ".+"
+    GraphQLAPIEndpoint:
+        Type: String
+        Description: GraphQL Api Endpoint
+        AllowedPattern : ".+"
+    GraphQLAPIID:
+        Type: String
+        Description: GraphQL Api ID
+        AllowedPattern : ".+"
+    WebsiteBucketName:
+        Type: String
+        Description: WebsiteBucketName for simulation
+        AllowedPattern : "[a-z][a-z0-9-_]*"
+Resources:
+            
+  ################################################################################
+  #
+  # Simulation Ingestion Poller Stack resources (execution role, lambda, and state machine)
+  #
+  ################################################################################          
+
+  GameSimulatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Real-Time Sports Update - Lambda function to ingest simulated game live events
+      Environment:
+        Variables:
+          ENV:
+            Ref: env
+          REGION:
+            Ref: AWS::Region
+          ANALYTICS_REALTIMESPORTSCLIENTKINESIS_KINESISSTREAMARN: !Ref EventStreamArn
+          REALTIMELIVESPORTSUPDATE_KINESISSTREAM_NAME: !Ref EventStream
+      Handler: index.handler
+      FunctionName: !Sub ${RootStackName}-GameSimulator-${env}
+      Role: !GetAtt 'GameSimulatorFunctionRole.Arn'
+      Code:
+        S3Bucket: !Ref S3DeploymentBucket
+        S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "gamesimulator-function.zip"]]
+      Runtime: nodejs12.x
+      Timeout: 60
+      MemorySize: 128
+
+  GameSimulatorFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub GameSimulator-Function-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+          - Effect: Allow
+            Action:
+            - kinesis:PutRecord
+            - kinesis:PutRecords
+            - kinesis:DescribeStream
+            - kinesis:DescribeStreamSummary
+            - kinesis:RegisterStreamConsumer
+            - kinesis:ListShards
+            - kinesis:MergeShards
+            Resource:
+            - !Ref EventStreamArn
+          - Effect: Allow
+            Action:
+              - kinesis:DescribeStreamConsumer
+              - kinesis:SubscribeToShard
+            Resource:
+            - !Ref EventStreamArn
+            
+            
+  GameSimulatorStateMachineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            -
+              Effect: "Allow"
+              Action:
+                  - "sts:AssumeRole"
+              Principal:
+                  Service:
+                      - !Sub "states.${AWS::Region}.amazonaws.com"
+        Path: /
+        Policies:
+            -
+                PolicyName: !Sub "${RootStackName}-simulator-statemachine-service-role"
+                PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                        -
+                            Effect: "Allow"
+                            Action:
+                                - "lambda:InvokeFunction"
+                            Resource:
+                                - !GetAtt GameSimulatorFunction.Arn
+            
+                
+  GameSimulatorStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+        StateMachineName: !Sub "${RootStackName}-Game-Simulator"
+        RoleArn: !GetAtt GameSimulatorStateMachineServiceRole.Arn
+        DefinitionString:
+            !Sub
+                - |-
+                    {
+                      "Comment": "Workflow that runs a simulation job of a sport data provier's data ingestion.",
+                      "StartAt": "WaitForDueDate",
+                      "States": {
+                        "WaitForDueDate": {
+                          "Type": "Wait",
+                          "TimestampPath": "$.planned_game_start",
+                          "Next": "Simulate Game Data"
+                        },
+                        "Wait X Seconds": {
+                          "Type": "Wait",
+                          "Seconds": ${x0},
+                          "Next": "Simulate Game Data"
+                        },
+                        "Simulate Game Data": {
+                          "Type": "Task",
+                          "Resource": "${x1}",
+                          "Next": "Simulation Complete?",
+                          "ResultPath": "$.status",
+                          "Retry": [
+                            {
+                              "ErrorEquals": ["States.ALL"],
+                              "IntervalSeconds": 1,
+                              "MaxAttempts": 3,
+                              "BackoffRate": 2
+                            }
+                          ]
+                        },
+                        "Simulation Complete?": {
+                          "Type": "Choice",
+                          "Choices": [
+                            {
+                              "Variable": "$.status",
+                              "StringEquals": "error",
+                              "Next": "Simulation Failed"
+                            },
+                            {
+                              "Variable": "$.status",
+                              "StringEquals": "completed",
+                              "Next": "Simulation Ended"
+                            }
+                          ],
+                          "Default": "Wait X Seconds"
+                        },
+                        "Simulation Failed": {
+                          "Type": "Fail",
+                          "Cause": "Game Data Ingestion Failed",
+                          "Error": "Get Game Data returned FAILED"
+                        },
+                        "Simulation Ended": {
+                          "Type": "Succeed"
+                        }
+                      }
+                    }
+                -
+                    {
+                        x0: !Ref WaitIntervalInSec,
+                        x1: !GetAtt GameSimulatorFunction.Arn
+                    }
+
+  
+  # Scheduler for today's games
+  GameSimulatorSchedulerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: SO0102 - Lambda function to schedule simulations of game's live events
+      Environment:
+        Variables:
+          ENV:
+            Ref: env
+          REGION:
+            Ref: AWS::Region
+          STATEMACHINE_ARN: !Ref GameSimulatorStateMachine
+          API_REALTIMESPORTSCLIENT_GRAPHQLAPIENDPOINTOUTPUT: !Ref GraphQLAPIEndpoint
+      Handler: index.handler
+      FunctionName: !Sub ${RootStackName}-GameSimulatorScheduler-${env}
+      Role: !GetAtt 'GameSimulatorSchedulerRole.Arn'
+      Code:
+        S3Bucket: !Ref S3DeploymentBucket
+        S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "gamesimulator-scheduler-function.zip"]]
+      Runtime: nodejs12.x
+      Timeout: 60
+      MemorySize: 256
+  GameSimulatorSchedulerRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub GameSimulatorScheduler-Function-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+          - Effect: "Allow"
+            Action:
+              - "states:StartExecution"
+            Resource:
+              - Ref: GameSimulatorStateMachine
+          - Effect: Allow
+            Action: 'appsync:GraphQL'
+            Resource: 
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Game", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Stage", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Season", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Competition", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Sport", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "FeedConfig", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Query", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Mutation", apiId: !Ref GraphQLAPIID}]
+
+  
+  
+
+  CloudWatchEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Schedule rule for Game Simulator Scheduler Lambda
+      ScheduleExpression:
+        Ref: CloudWatchRule
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - GameSimulatorSchedulerFunction
+          - Arn
+        Id:
+          Ref: GameSimulatorSchedulerFunction
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: GameSimulatorSchedulerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - CloudWatchEvent
+        - Arn
+  
+  
+  ################################################################################
+  #
+  # Simulation WebApp 
+  #
+  ################################################################################                
+        
+  GameSimulatorWebsiteBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+          rules_to_suppress:
+              -
+                  id: W35
+                  reason: "S3 Bucket doen't have access logging since it is a simulated environment for testing."
+    DeletionPolicy: Retain
+    Properties:
+        BucketName: !Ref WebsiteBucketName
+        VersioningConfiguration:
+            Status: Enabled
+        BucketEncryption:
+            ServerSideEncryptionConfiguration:
+                - ServerSideEncryptionByDefault:
+                      SSEAlgorithm: AES256
+        PublicAccessBlockConfiguration:
+            RestrictPublicBuckets: true
+            BlockPublicAcls: true
+            BlockPublicPolicy: true
+            IgnorePublicAcls: true
+        WebsiteConfiguration:
+            IndexDocument: "index.html"
+            ErrorDocument: "index.html"
+        AccessControl: LogDeliveryWrite
+        LoggingConfiguration:
+            DestinationBucketName: !Ref WebsiteBucketName
+            LogFilePrefix: "access_log/"
+        LifecycleConfiguration:
+            Rules:
+                -
+                  Id: "Keep access log for 30 days"
+                  Status: Enabled
+                  Prefix: access_log/
+                  ExpirationInDays: 30
+                  AbortIncompleteMultipartUpload:
+                      DaysAfterInitiation: 1
+                -
+                  Id: "Keep cloudfront logs for 30 days"
+                  Status: Enabled
+                  Prefix: cf_logs/
+                  ExpirationInDays: 30
+                  AbortIncompleteMultipartUpload:
+                      DaysAfterInitiation: 1
+  
+  GameSimulatorWebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+        Bucket: !Ref GameSimulatorWebsiteBucket
+        PolicyDocument:
+            Statement:
+                - Action:
+                      - "s3:GetObject"
+                  Effect: "Allow"
+                  Resource:
+                      Fn::Join:
+                          - ""
+                          - - "arn:aws:s3:::"
+                            - Ref: "GameSimulatorWebsiteBucket"
+                            - "/*"
+                  Principal:
+                      CanonicalUser: !GetAtt GameSimulatorWebsiteOriginAccessIdentity.S3CanonicalUserId
+  
+  GameSimulatorWebsiteOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+        CloudFrontOriginAccessIdentityConfig:
+            Comment: !Sub "access-identity-${GameSimulatorWebsiteBucket}"
+            
+  GameSimulatorWebsiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Metadata:
+        cfn_nag:
+            rules_to_suppress:
+                - id: W70
+                  reason: "This stack use CloudFront default distribution just for simulation purpose, cloudformation ovverride to default TLS v1 ."
+    Properties:
+        DistributionConfig:
+            Comment: "Website distribution for Game Simulator Web Application"
+            Origins:
+                - Id: S3-gamesimulator-webapp
+                  DomainName: !Sub "${GameSimulatorWebsiteBucket}.s3.${AWS::Region}.amazonaws.com"
+                  S3OriginConfig:
+                      OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${GameSimulatorWebsiteOriginAccessIdentity}"
+            DefaultCacheBehavior:
+                TargetOriginId: S3-gamesimulator-webapp
+                AllowedMethods:
+                    - GET
+                    - HEAD
+                    - OPTIONS
+                    - PUT
+                    - POST
+                    - PATCH
+                    - DELETE
+                CachedMethods:
+                    - GET
+                    - HEAD
+                    - OPTIONS
+                ForwardedValues:
+                    QueryString: "false"
+                ViewerProtocolPolicy: redirect-to-https
+                DefaultTTL: 0
+                MinTTL: 0
+                MaxTTL: 0
+                Compress: true
+            DefaultRootObject: "index.html"
+            CustomErrorResponses:
+                - ErrorCode: "404"
+                  ResponsePagePath: "/"
+                  ResponseCode: "200"
+                - ErrorCode: "403"
+                  ResponsePagePath: "/"
+                  ResponseCode: "200"
+            ViewerCertificate:
+                CloudFrontDefaultCertificate: "true"
+            Enabled: "true"
+            HttpVersion: "http2"
+            Logging:
+                Bucket: !Sub "${GameSimulatorWebsiteBucket}.s3.amazonaws.com"
+                Prefix: cf_logs/
+                IncludeCookies: true
+
+  ################################################################################
+  #
+  # Data initialization for simulations
+  #
+  ################################################################################
+  GameSimulatorInitFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - GameSimulatorWebsiteBucket
+    Properties:
+      Description: SO0102 - Lambda function for data initialization of simulations of game's live events
+      Environment:
+        Variables:
+          ENV:
+            Ref: env
+          REGION:
+            Ref: AWS::Region
+          GRAPHQL_APIKEY: !Ref GraphQLApiKey
+          API_REALTIMESPORTSCLIENT_GRAPHQLAPIENDPOINTOUTPUT: !Ref GraphQLAPIEndpoint
+          PREPROCESS_CONFIG_TABLE: !Ref PreprocessConfigTableName
+          GAMESIMULATOR_WEBSITE_BUCKET: !Ref GameSimulatorWebsiteBucket
+          GAMESIMULATOR_WEBSITE_ORIGIN_BUCKET: !Ref S3DeploymentBucket
+          GAMESIMULATOR_WEBSITE_ORIGIN_ROOT_KEY: !Ref S3DeploymentRootKey
+      Handler: index.handler
+      FunctionName: !Sub ${RootStackName}-GameSimulatorInit-${env}
+      Role: !GetAtt 'GameSimulatorInitRole.Arn'
+      Code:
+        S3Bucket: !Ref S3DeploymentBucket
+        S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "gamesimulator-init-function.zip"]]
+      Runtime: nodejs12.x
+      Timeout: 60
+      MemorySize: 256
+  GameSimulatorInitRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub GameSimulatorInit-Function-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+          - Effect: Allow
+            Action:
+            - dynamodb:Get*
+            - dynamodb:BatchGetItem
+            - dynamodb:List*
+            - dynamodb:Describe*
+            - dynamodb:Scan
+            - dynamodb:Query
+            - dynamodb:PutItem
+            Resource:
+            - !Ref PreprocessConfigDynamoDBTableArn
+          - Effect: Allow
+            Action:
+                - s3:GetObject
+                - s3:ListBucket
+            Resource:
+                - !Sub "arn:aws:s3:::${S3DeploymentBucket}"
+                - !Sub "arn:aws:s3:::${S3DeploymentBucket}/*"
+          - Effect: Allow
+            Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+            Resource:
+                - !Join [
+                      "/",
+                      [!GetAtt GameSimulatorWebsiteBucket.Arn, "*"],
+                  ]
+          - Effect: Allow
+            Action: 'appsync:GraphQL'
+            Resource: 
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Game", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Stage", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Season", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Competition", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Sport", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "FeedConfig", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Query", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Mutation", apiId: !Ref GraphQLAPIID}]
+    
+  InitializeSportsData:
+    Type: Custom::InitializeSportsData
+    Properties:
+        ServiceToken: !GetAtt 'GameSimulatorInitFunction.Arn'
+
+
+
+  #
+  # Outputs
+  #
+                
+Outputs:
+    GameSimulatorFunction:
+      Value:
+        Fn::GetAtt:
+        - GameSimulatorFunction
+        - Arn
+    
+    GameSimulatorStateMachine:
+      Value:
+        Ref: GameSimulatorStateMachine
+        
+    GameSimulatorInitFunction:
+      Value:
+        Fn::GetAtt:
+        - GameSimulatorInitFunction
+        - Arn
+    
+    InitializeSportsDataMessage:
+      Description: The message from the custom resource.
+      Value: !GetAtt 'InitializeSportsData.Message'
+    
+    GameSimulatorSchedulerFunction:
+      Value:
+        Fn::GetAtt:
+        - GameSimulatorSchedulerFunction
+        - Arn

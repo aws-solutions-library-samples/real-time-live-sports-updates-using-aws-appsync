@@ -1,0 +1,556 @@
+# Serverless Limit Monitor Solution
+#
+# template for serverless-limit-monitor-solution
+# **DO NOT DELETE**
+#
+# author: aws-solutions-builder@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: (SO0102) - RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+
+Parameters:
+  # Environment parameter 
+  Env:
+    Description: environment
+    Type: String
+  # Solution optional api stack
+  DeployIngestAPI:
+    Type: String
+    Description: Deploy optional ingest REST API stack
+    Default: "true"
+    AllowedValues:
+      - "false"
+      - "true"
+  # Solution optional poller stack
+  DeployIngestLambdaPoller:
+    Type: String
+    Description: Deploy optional Lambda poller function for retrieving data
+    Default: "false"
+    AllowedValues:
+      - "false"
+      - "true"
+  # Solution optional poller stack cron expression
+  CloudWatchRule:
+    Type: String
+    Default: cron(5 0 * * ? *)
+    Description: " Schedule a cron / rate expression for the optional Deploy Ingestion Lambda Schduler"
+    AllowedPattern: "^(rate\\(((1 (hour|minute|day))|(\\d+ (hours|minutes|days)))\\))|(cron\\(\\s*($|#|\\w+\\s*=|(\\?|\\*|(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?(?:,(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?)*)\\s+(\\?|\\*|(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?(?:,(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?)*)\\s+(\\?|\\*|(?:[01]?\\d|2[0-3])(?:(?:-|\\/|\\,)(?:[01]?\\d|2[0-3]))?(?:,(?:[01]?\\d|2[0-3])(?:(?:-|\\/|\\,)(?:[01]?\\d|2[0-3]))?)*)\\s+(\\?|\\*|(?:0?[1-9]|[12]\\d|3[01])(?:(?:-|\\/|\\,)(?:0?[1-9]|[12]\\d|3[01]))?(?:,(?:0?[1-9]|[12]\\d|3[01])(?:(?:-|\\/|\\,)(?:0?[1-9]|[12]\\d|3[01]))?)*)\\s+(\\?|\\*|(?:[1-9]|1[012])(?:(?:-|\\/|\\,)(?:[1-9]|1[012]))?(?:L|W|#)?(?:[1-9]|1[012])?(?:,(?:[1-9]|1[012])(?:(?:-|\\/|\\,)(?:[1-9]|1[012]))?(?:L|W|#)?(?:[1-9]|1[012])?)*|\\?|\\*|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?:(?:-)(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))?(?:,(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?:(?:-)(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))?)*)\\s+(\\?|\\*|(?:[0-6])(?:(?:-|\\/|\\,|#)(?:[0-6]))?(?:L)?(?:,(?:[0-6])(?:(?:-|\\/|\\,|#)(?:[0-6]))?(?:L)?)*|\\?|\\*|(?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:(?:-)(?:MON|TUE|WED|THU|FRI|SAT|SUN))?(?:,(?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:(?:-)(?:MON|TUE|WED|THU|FRI|SAT|SUN))?)*)(|\\s)+(\\?|\\*|(?:|\\d{4})(?:(?:-|\\/|\\,)(?:|\\d{4}))?(?:,(?:|\\d{4})(?:(?:-|\\/|\\,)(?:|\\d{4}))?)*))\\))$"
+  # Kinesis Stream numner of shards
+  KinesisStreamShardCount:
+    Type: Number
+    Default: 1
+  # AppSync Layer
+  AppSyncApiName:
+    Type: String
+    Description: The name of the AppSync API for delivery real-time live sports updates.
+    Default: RealTimeLiveSportsAPI
+  APIKeyExpirationEpoch:
+    Type: Number
+    Description: The epoch time in seconds when the API Key should expire. Setting
+      this to 0 will default to 7 days from the deployment date. Setting this to -1
+      will not create an API Key.
+    Default: 365
+    MinValue: -1
+  WaitIntervalInSec:
+    Type: Number
+    Description: Interval for periodically call api for game events (5 to 600) seconds
+    MinValue: 5
+    MaxValue: 600
+    Default: 10
+  # Solution optional simulation stack
+  DeploySimulationStack:
+    Type: String
+    Description: Deploy optional simulations stack with sample and simulated data of sports events
+    Default: "true"
+    AllowedValues:
+      - "false"
+      - "true"
+  SimulationCloudWatchRule:
+    Type: String
+    Default: cron(0 14 * * ? *)
+    Description: " Schedule a cron / rate expression for the optional Simulation Game Schduler"
+    AllowedPattern: "^(rate\\(((1 (hour|minute|day))|(\\d+ (hours|minutes|days)))\\))|(cron\\(\\s*($|#|\\w+\\s*=|(\\?|\\*|(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?(?:,(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?)*)\\s+(\\?|\\*|(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?(?:,(?:[0-5]?\\d)(?:(?:-|\\/|\\,)(?:[0-5]?\\d))?)*)\\s+(\\?|\\*|(?:[01]?\\d|2[0-3])(?:(?:-|\\/|\\,)(?:[01]?\\d|2[0-3]))?(?:,(?:[01]?\\d|2[0-3])(?:(?:-|\\/|\\,)(?:[01]?\\d|2[0-3]))?)*)\\s+(\\?|\\*|(?:0?[1-9]|[12]\\d|3[01])(?:(?:-|\\/|\\,)(?:0?[1-9]|[12]\\d|3[01]))?(?:,(?:0?[1-9]|[12]\\d|3[01])(?:(?:-|\\/|\\,)(?:0?[1-9]|[12]\\d|3[01]))?)*)\\s+(\\?|\\*|(?:[1-9]|1[012])(?:(?:-|\\/|\\,)(?:[1-9]|1[012]))?(?:L|W|#)?(?:[1-9]|1[012])?(?:,(?:[1-9]|1[012])(?:(?:-|\\/|\\,)(?:[1-9]|1[012]))?(?:L|W|#)?(?:[1-9]|1[012])?)*|\\?|\\*|(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?:(?:-)(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))?(?:,(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?:(?:-)(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))?)*)\\s+(\\?|\\*|(?:[0-6])(?:(?:-|\\/|\\,|#)(?:[0-6]))?(?:L)?(?:,(?:[0-6])(?:(?:-|\\/|\\,|#)(?:[0-6]))?(?:L)?)*|\\?|\\*|(?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:(?:-)(?:MON|TUE|WED|THU|FRI|SAT|SUN))?(?:,(?:MON|TUE|WED|THU|FRI|SAT|SUN)(?:(?:-)(?:MON|TUE|WED|THU|FRI|SAT|SUN))?)*)(|\\s)+(\\?|\\*|(?:|\\d{4})(?:(?:-|\\/|\\,)(?:|\\d{4}))?(?:,(?:|\\d{4})(?:(?:-|\\/|\\,)(?:|\\d{4}))?)*))\\))$"
+  SimulationWaitIntervalInSec:
+    Type: Number
+    Description: time interval between simulated game events (1 to 60) seconds
+    MinValue: 1
+    MaxValue: 60
+    Default: 10
+  # Optional notifications Stack
+  PinpointAppId:
+    Type: String
+    Description: "Pinpoint App / Project ID for messaging notifications"
+  
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Options
+      Parameters:
+      - Env
+      - DeployIngestAPI
+      - DeployIngestLambdaPoller
+      - DeploySimulationStack
+      - KinesisStreamShardCount
+      - PinpointAppId
+    ParameterLabels:
+      Env:
+        default: Environment
+      DeployIngestAPI:
+        default: Deploy Ingestion API
+      DeployIngestLambdaPoller:
+        default: Deploy Ingestion Lambda Poller
+      DeploySimulationStack:
+        default: Deploy Game Simulation and Samples Stack
+      KinesisStreamShardCount:
+        default: Kinesis Stream Number of Shards
+      PinpointAppId:
+        default: Pinpoint App / Project Id
+      WaitIntervalInSec:
+        default: Ingestion Poller Wait Interval in Sec
+      SimulationCloudWatchRule:
+        default: Simulation CloudWatch Rule
+      SimulationWaitIntervalInSec:
+        default: Simulation Wait Interval in Sec
+      AppSyncApiName:
+        default: AppSync API Name
+
+Mappings:
+  MetricsMap:
+    Send-Data:
+      SendAnonymousData: "Yes" # change to 'No' if needed
+  Solution:
+    Project:
+        Id: SO0102
+    Template:
+        S3Bucket: %%BUCKET_NAME%%
+        KeyPrefix: "%%SOLUTION_NAME%%/%%VERSION%%"
+  DynamoDB:
+    LiveSportsTables:
+      DynamoDBBillingMode: PAY_PER_REQUEST
+      DynamoDBEnableServerSideEncryption: true
+      tableName: LiveSportsTables
+    Preprocess:
+      tableName: preprocessConfig
+      partitionKeyName: providerId
+      partitionKeyType: S
+      sortKeyName: feedId
+      sortKeyType: S
+      DynamoDBBillingMode: PAY_PER_REQUEST
+      DynamoDBEnableServerSideEncryption: true
+  StepFunctions:
+    StateMachine:
+      WaitIntervalInSec: 12
+  SourceCode:
+    General:
+      S3Bucket: %%BUCKET_NAME%%
+      KeyPrefix: "%%SOLUTION_NAME%%/%%VERSION%%"
+  Simulation:
+    General:
+      S3BucketName: realtimelivesportsupdates-web
+
+Conditions:
+  UseIngestAPIResources: !Equals [ !Ref DeployIngestAPI, "true" ]
+  UseIngestionPoller: !Equals [ !Ref DeployIngestLambdaPoller, "true" ]
+  UseSimulationsResources: !Equals [ !Ref DeploySimulationStack, "true" ]
+  UseNotificationssResources: !Not [!Equals [!Ref PinpointAppId, ""]]
+  APIKeyExpirationEpochIsPositive:
+    Fn::And:
+    - Fn::Not:
+      - Fn::Equals:
+        - Ref: APIKeyExpirationEpoch
+        - -1
+    - Fn::Not:
+      - Fn::Equals:
+        - Ref: APIKeyExpirationEpoch
+        - 0
+
+Resources:
+
+  #
+  # Live update API Layer
+  # AppSync and DynamoDB tables for handling sports game data
+  #
+
+  GraphQLAPIStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub [
+          "https://${x0}-reference.s3.amazonaws.com/${x1}/real-time-live-sports-updates-using-aws-appsync-api-stack.template", {
+              x0: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "S3Bucket"
+              ],
+              x1: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "KeyPrefix"
+              ]
+          }
+      ]
+      Parameters:
+          CreateAPIKey: 1
+          DynamoDBBillingMode: !FindInMap ["DynamoDB","LiveSportsTables","DynamoDBBillingMode"]
+          DynamoDBEnableServerSideEncryption: !FindInMap ["DynamoDB","LiveSportsTables","DynamoDBEnableServerSideEncryption"]
+          S3DeploymentBucket: !FindInMap ["SourceCode", "General", "S3Bucket"]
+          S3DeploymentBucketRegional: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
+          S3DeploymentRootKey: !FindInMap ["SourceCode", "General", "KeyPrefix"]
+          env: !Ref Env
+          AppSyncApiName: !Ref AppSyncApiName
+          SolutionId: !FindInMap ["Solution", "Project", "Id"]
+
+  #
+  # Ingestion and PreProcess
+  # Kinesis Stream,  Preprocess Lambda and Config DynamoDB Table
+  #
+  PreprocessConfigDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Metadata:
+      cfn_nag:
+          rules_to_suppress:
+              -
+                  id: W28
+                  reason: "Table name is constructed with stack name. On update, we need to keep the existing table name."
+    Properties:
+      BillingMode: !FindInMap ["DynamoDB","Preprocess","DynamoDBBillingMode"]
+      AttributeDefinitions:
+      - AttributeName: providerId
+        AttributeType: S
+      - AttributeName: feedId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: providerId
+        KeyType: HASH
+      - AttributeName: feedId
+        KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+      TableName: !Sub [
+        "${x0}-${AWS::StackName}-${x1}-${Env}", {
+          x0: !FindInMap [
+              "Solution",
+              "Project",
+              "Id"
+          ],
+          x1: !FindInMap [
+              "DynamoDB",
+              "Preprocess",
+              "tableName"
+          ]
+        }
+      ]
+      SSESpecification:
+        SSEEnabled: !FindInMap ["DynamoDB","Preprocess","DynamoDBEnableServerSideEncryption"]
+
+  EventStream:
+    Type: AWS::Kinesis::Stream
+    Metadata:
+      cfn_nag:
+          rules_to_suppress:
+              -
+                  id: W28
+                  reason: "Stream name is constructed with stack name. On update, we need to keep the existing stream name."
+    Properties:
+      Name: !Sub ${AWS::StackName}-EventStream-${Env}
+      ShardCount:
+        Ref: KinesisStreamShardCount
+      StreamEncryption:
+        EncryptionType: 'KMS'
+        KeyId: alias/aws/kinesis
+
+  EventStreamConsumer:
+    Type: 'AWS::Kinesis::StreamConsumer'
+    Properties:
+      ConsumerName: lambda
+      StreamARN: !GetAtt EventStream.Arn
+
+  EventStreamConsumerSourceMapping:
+    Type: 'AWS::Lambda::EventSourceMapping'
+    Properties:
+      BatchSize: 16
+      Enabled: true
+      EventSourceArn: !Ref EventStreamConsumer
+      FunctionName: !GetAtt 'PreprocessFunction.Arn'
+      StartingPosition: LATEST
+
+  PreprocessFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: SO0102 - Lambda function to preprocess events to send live updates
+      Environment:
+        Variables:
+          ENV:
+            Ref: Env
+          REGION:
+            Ref: AWS::Region
+          API_REALTIMESPORTSCLIENT_GRAPHQLAPIENDPOINTOUTPUT: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIEndpointOutput
+          GRAPHQL_APIKEY: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIKeyOutput
+          STORAGE_PREPROCESSCONFIG_NAME:
+            Ref: PreprocessConfigDynamoDBTable
+          STORAGE_PREPROCESSCONFIG_ARN: !GetAtt 'PreprocessConfigDynamoDBTable.Arn'
+          DEFAULT_PROVIDER_ID: default
+          DEFAULT_FEED_ID: default
+      Handler: index.handler
+      FunctionName: !Sub ${AWS::StackName}-Preprocess-${Env}
+      Role: !GetAtt 'PreprocessFunctionRole.Arn'
+      Code:
+        S3Bucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
+        S3Key: !Join ["/", [!FindInMap ["SourceCode", "General", "KeyPrefix"],  "preprocess-function.zip"]]
+      Runtime: nodejs12.x
+      Timeout: 30
+      MemorySize: 256
+
+  PreprocessFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub Preprocess-Function-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+          - Effect: Allow
+            Action:
+            - kinesis:SubscribeToShard
+            - kinesis:DescribeStreamSummary
+            - kinesis:GetShardIterator
+            - kinesis:GetRecords
+            - kinesis:ListShards
+            Resource:
+            - !GetAtt EventStream.Arn
+          - Effect: Allow
+            Action:
+            - kinesis:SubscribeToShard
+            Resource:
+            - !GetAtt EventStreamConsumer.ConsumerARN
+          - Effect: Allow
+            Action:
+            - dynamodb:Get*
+            - dynamodb:BatchGetItem
+            - dynamodb:List*
+            - dynamodb:Describe*
+            - dynamodb:Scan
+            - dynamodb:Query
+            Resource:
+            - !GetAtt PreprocessConfigDynamoDBTable.Arn
+          - Effect: Allow
+            Action: 'appsync:GraphQL'
+            Resource: 
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Game", apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "GameStatus",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "GameSection",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Competitor",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Player",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/fields/${fieldName}", {typeName: "Mutuation", fieldName: "updateGame",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "GameEvent",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput'}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/fields/${fieldName}", {typeName: "Mutuation", fieldName: "createGameEvent",  apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput' }]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/*", {apiId: !GetAtt 'GraphQLAPIStack.Outputs.GraphQLAPIIdOutput' }]
+
+
+  #
+  # Optional Game Notification Stack
+  # Lambda, DynamoDB and Pinpoint for RealTime Live Sports Update Using AWS AppSync.
+  #
+  NotificationsStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: UseNotificationssResources
+    DependsOn:
+    - EventStream
+    - GraphQLAPIStack
+    Properties:
+      TemplateURL: !Sub [
+          "https://${x0}-reference.s3.amazonaws.com/${x1}/real-time-live-sports-updates-using-aws-appsync-notifications-stack.template", {
+              x0: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "S3Bucket"
+              ],
+              x1: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "KeyPrefix"
+              ]
+          }
+      ]
+      Parameters:
+          env: !Ref Env
+          S3DeploymentBucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
+          S3DeploymentRootKey: !FindInMap ["SourceCode", "General", "KeyPrefix"]
+          SolutionId: !FindInMap ["Solution", "Project", "Id"]
+          RootStackName: !Sub "${AWS::StackName}"
+          GameStreamArn: !GetAtt GraphQLAPIStack.Outputs.GameTableStreamArn
+          PinpointApp: !Ref PinpointAppId
+
+  #
+  # Optional resources - Ingestion Poller Stack
+  # Ingestion Lambda Poller to retrieva data from 3rd party via API Http GET call
+  #
+  IngestionPollerStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: UseIngestionPoller
+    DependsOn:
+    - EventStream
+    - GraphQLAPIStack
+    Properties:
+      TemplateURL: !Sub [
+          "https://${x0}-reference.s3.amazonaws.com/${x1}/real-time-live-sports-updates-using-aws-appsync-ingestion-poller-stack.template", {
+              x0: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "S3Bucket"
+              ],
+              x1: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "KeyPrefix"
+              ]
+          }
+      ]
+      Parameters:
+          EventStream: !Ref EventStream
+          EventStreamArn: !GetAtt EventStream.Arn
+          env: !Ref Env
+          S3DeploymentBucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
+          S3DeploymentRootKey: !FindInMap ["SourceCode", "General", "KeyPrefix"]
+          SolutionId: !FindInMap ["Solution", "Project", "Id"]
+          RootStackName: !Sub "${AWS::StackName}"
+          CloudWatchRule: !Ref CloudWatchRule
+          WaitIntervalInSec: !Ref WaitIntervalInSec
+          GraphQLAPIEndpoint: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIEndpointOutput
+          GraphQLApiKey: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIKeyOutput
+          GraphQLAPIID: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIIdOutput
+
+  #
+  # Optional resources - Ingestion API Stack
+  # ApiGateway for exposing ingestion API via POST
+  #
+
+  IngestionAPIStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: UseIngestAPIResources
+    DependsOn:
+    - EventStream
+    Properties:
+      TemplateURL: !Sub [
+          "https://${x0}-reference.s3.amazonaws.com/${x1}/real-time-live-sports-updates-using-aws-appsync-ingestion-api-stack.template", {
+              x0: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "S3Bucket"
+              ],
+              x1: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "KeyPrefix"
+              ]
+          }
+      ]
+      Parameters:
+          EventStream: !Ref EventStream
+          EventStreamArn: !GetAtt EventStream.Arn
+          StageName: !Ref Env
+          ApiGatewayEndpointName: !Sub [
+            "${x0}-IngestionAPI",{
+              x0: !FindInMap ["Solution", "Project", "Id"]
+            }]
+          SolutionId: !FindInMap ["Solution", "Project", "Id"]
+
+
+  #
+  # Optional resources - Game Simulator Stack
+  # ApiGateway for exposing ingestion API via POST
+  #
+
+  GameSimulatorStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: UseSimulationsResources
+    DependsOn:
+    - EventStream
+    - GraphQLAPIStack
+    - PreprocessConfigDynamoDBTable
+    Properties:
+      TemplateURL: !Sub [
+          "https://${x0}-reference.s3.amazonaws.com/${x1}/real-time-live-sports-updates-using-aws-appsync-simulations-stack.template", {
+              x0: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "S3Bucket"
+              ],
+              x1: !FindInMap [
+                  "Solution",
+                  "Template",
+                  "KeyPrefix"
+              ]
+          }
+      ]
+      Parameters:
+          EventStream: !Ref EventStream
+          EventStreamArn: !GetAtt EventStream.Arn
+          PreprocessConfigTableName: !Ref PreprocessConfigDynamoDBTable
+          PreprocessConfigDynamoDBTableArn: !GetAtt 'PreprocessConfigDynamoDBTable.Arn'
+          env: !Ref Env
+          S3DeploymentBucket: !Join ["-", [!FindInMap ["SourceCode", "General", "S3Bucket"], Ref: "AWS::Region"]]
+          S3DeploymentRootKey: !FindInMap ["SourceCode", "General", "KeyPrefix"]
+          SolutionId: !FindInMap ["Solution", "Project", "Id"]
+          RootStackName: !Sub "${AWS::StackName}"
+          CloudWatchRule: !Ref SimulationCloudWatchRule
+          WaitIntervalInSec: !Ref SimulationWaitIntervalInSec
+          GraphQLAPIEndpoint: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIEndpointOutput
+          GraphQLApiKey: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIKeyOutput
+          GraphQLAPIID: !GetAtt GraphQLAPIStack.Outputs.GraphQLAPIIdOutput
+          WebsiteBucketName: !Sub [ "${x0}-${AWS::AccountId}-${AWS::Region}", {
+              x0: !FindInMap ["Simulation", "General", "S3BucketName"]
+            }
+          ]
+
+
+  #
+  # Outputs
+  #
+
+Outputs:
+  PreprocessFunction:
+    Value:
+      Ref: PreprocessFunction
+  PreprocessFunctionArn:
+    Value:
+      Fn::GetAtt:
+      - PreprocessFunction
+      - Arn
+  EventStream:
+    Value:
+      Ref: EventStream
+  EventStreamArn:
+    Value:
+      Fn::GetAtt:
+      - EventStream
+      - Arn
+  PreprocessConfigDynamoDBTable:
+    Value:
+      Ref: PreprocessConfigDynamoDBTable
+  Region:
+    Value:
+      Ref: AWS::Region
+  PreprocessFunctionRole:
+    Value:
+      Ref: PreprocessFunctionRole
+

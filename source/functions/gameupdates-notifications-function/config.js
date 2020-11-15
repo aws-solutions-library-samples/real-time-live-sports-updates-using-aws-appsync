@@ -1,0 +1,1 @@
+module.exports.allowedEvents = ['match_started','score_change','scoring_play','field_goal','extra_point','closed','match_ended'];

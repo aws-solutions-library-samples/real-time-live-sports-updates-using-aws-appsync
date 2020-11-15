@@ -1,0 +1,8 @@
+## [Start] Checking for allowed operations which can return this field **
+#set( $operation = $util.defaultIfNull($context.source.operation, "null") )
+#if( $operation == "Mutation" )
+$util.toJson(null)
+#else
+$util.toJson($context.source.feedConfig)
+#end
+## [End] Checking for allowed operations which can return this field **

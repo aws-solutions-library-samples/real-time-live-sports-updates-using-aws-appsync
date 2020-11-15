@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0102-intestion-api-stack) - Amazon ApiGateway and Kinesis integration Resources for RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+
+Metadata: {}
+Parameters:
+    SolutionId:
+        Type: String
+        Description: solution ID
+        AllowedPattern : "[a-zA-Z0-9]+"
+    ApiGatewayEndpointName:
+        Type: String
+        Description: API Gateway Endpoint name
+        AllowedPattern : ".+"
+    StageName:
+        Type: String
+        Description: API Gateway Endpoint Stage
+        AllowedPattern : ".+"
+    EventStream:
+        Type: String
+        Description: EventStream name
+        AllowedPattern : ".+"
+    EventStreamArn:
+        Type: String
+        Description: EventStream Arn
+        AllowedPattern : ".+"
+Resources:
+  
+  #
+  # INGESTION REST API
+  #
+
+    IngestionRestApiLogAccessRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: Allow
+                        Principal:
+                            Service: "apigateway.amazonaws.com"
+                        Action: "sts:AssumeRole"
+            Path: /
+            ManagedPolicyArns:
+                - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+    IngestionApiAccount:
+        Type: AWS::ApiGateway::Account
+        Properties:
+            CloudWatchRoleArn: !GetAtt IngestionRestApiLogAccessRole.Arn
+
+    IngestionRestApi:
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+            Description: !Sub "(${SolutionId}) API endpoints to ingest game data via REST API POST"
+            ApiKeySourceType: HEADER
+            Body:
+                swagger: "2.0"
+                info:
+                    version: "2018-08-03T20:13:00Z"
+                    title: !Sub "${ApiGatewayEndpointName}"
+                basePath: !Sub "/${StageName}"
+                schemes:
+                    - "https"
+                x-amazon-apigateway-request-validators:
+                  body:
+                    validateRequestBody: true
+                paths:
+                    "/provider/{providerId}/gameEvent":
+                        options:
+                          consumes:
+                          - application/json
+                          produces:
+                          - application/json
+                          responses:
+                            '200':
+                              description: '200 response'
+                              headers:
+                                Access-Control-Allow-Origin:
+                                  type: string
+                                Access-Control-Allow-Methods:
+                                  type: string
+                                Access-Control-Allow-Headers:
+                                  type: string
+                          x-amazon-apigateway-integration:
+                            responses:
+                              default:
+                                statusCode: '200'
+                                responseParameters:
+                                  method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                                  method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+                                  method.response.header.Access-Control-Allow-Origin: "'*'"
+                              '200':
+                                statusCode: '200'
+                                responseParameters:
+                                  method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                                  method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+                                  method.response.header.Access-Control-Allow-Origin: "'*'"
+                            requestTemplates:
+                              application/json: '{"statusCode": 200}'
+                            passthroughBehavior: when_no_match
+                            type: mock
+                        post:
+                            consumes:
+                                - "application/json"
+                            produces:
+                                - "application/json"
+                            x-amazon-apigateway-request-validator: body
+                            parameters:
+                                -
+                                    name: providerId
+                                    in: path
+                                    required: true
+                                    type: string
+                                - 
+                                    in: body
+                                    name: RequestBodyModel
+                                    required: true
+                                    schema:
+                                      "$ref": "#/definitions/RequestBodyModel"
+                            responses:
+                                '200':
+                                    description: "200 response"
+                                    statusCode: "200"
+                                    schema:
+                                        $ref: "#/definitions/Empty"
+                            security:
+                                - sigv4: []
+                            x-amazon-apigateway-integration:
+                                responses:
+                                    'default':
+                                        statusCode: "200"
+                                        schema:
+                                            $ref: "#/definitions/Empty"
+                                    '200':
+                                        description: "200 response"
+                                        statusCode: "200"
+                                        schema:
+                                            $ref: "#/definitions/Empty"
+                                requestTemplates: 
+                                    application/json: !Sub |
+                                      #set($payload = $input.json('$'))
+                                      #set($inputRoot = $input.path('$'))
+                                      #set($providerId = $input.params('providerId'))
+                                      #set($feedId = $inputRoot.feedId)
+                                      #set($partitionkey = "$providerId.$feedId" )
+                                      #set($data = "$payload")
+                                      {
+                                          "Data": "$util.base64Encode($data)",
+                                          "PartitionKey": "$partitionkey",
+                                          "StreamName": "${EventStream}"
+                                      }
+
+                                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:kinesis:action/PutRecord'
+                                passthroughBehavior: when_no_match
+                                httpMethod: POST
+                                requestParameters: 
+                                    "integration.request.header.Content-Type": "'application/x-amz-json-1.1'"
+                                type: aws
+                                credentials: !GetAtt IngestionIntegrationRole.Arn
+                securityDefinitions:
+                    sigv4:
+                        type: "apiKey"
+                        name: "Authorization"
+                        in: "header"
+                        x-amazon-apigateway-authtype: "awsSigv4"
+                definitions:
+                    Empty:
+                        type: "object"
+                        title: "Empty Schema"
+                    RequestBodyModel:
+                        type: "object"
+                        properties:
+                            feedId:
+                                type: "string"
+                            providerId:
+                                type: "string"
+                            gameId:
+                                type: "string"
+                        required:
+                        - feedId
+                        - providerId
+                        - gameId
+        
+    
+ #
+ # DEPLOYMENT OF INGESTION REST API
+ #
+    
+    DeploymentIngestionRestApi:
+        Type: AWS::ApiGateway::Deployment
+        Metadata:
+                cfn_nag:
+                    rules_to_suppress:
+                        -
+                            id: W68
+                            reason: "suppress UsagePlan requirement"
+        Properties:
+            Description: !Sub "(${SolutionId}) Created for ${ApiGatewayEndpointName}"
+            RestApiId: !Ref IngestionRestApi
+            StageName: !Ref StageName
+            StageDescription:
+                Description: !Sub "(${SolutionId}) stage for  ${ApiGatewayEndpointName}"
+                LoggingLevel: ERROR
+                AccessLogSetting:
+                    DestinationArn: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/RealTime_Live_Sports_Update_Using_AWS_AppSync/api/${IngestionRestApi}/${StageName}"
+                    Format: "$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] \"$context.httpMethod $context.resourcePath $context.protocol\" $context.status $context.responseLength $context.requestId"
+    
+    
+ #
+ # INTEGRATION ROLE FOR REST API
+ #
+    IngestionIntegrationRole:
+        Type: 'AWS::IAM::Role'
+        Properties: 
+          AssumeRolePolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                - 'apigateway.amazonaws.com'
+              Action:
+              - 'sts:AssumeRole'
+          Policies:
+          - PolicyName: !Sub "${SolutionId}-IngestionRestApi-IntegrationRole"
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action: 'kinesis:PutRecord'
+                Resource: !Ref EventStreamArn
+                
+
+  #
+  # Outputs
+  #
+                
+Outputs:
+    ApiGatewayURI:
+        Value: !Sub 'https://${IngestionRestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
+    ApiName:
+        Description: API Friendly name
+        Value: IngestionRestApi
+    ApiId:
+        Description: API ID (prefix of API URL)
+        Value:
+          Ref: IngestionRestApi

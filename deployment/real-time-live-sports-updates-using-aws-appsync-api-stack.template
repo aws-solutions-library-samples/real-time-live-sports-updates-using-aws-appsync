@@ -1,0 +1,409 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0102-api-stack) - AWS AppSync and DynamoDB Resources for RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+
+Metadata: {}
+Parameters:
+  SolutionId:
+    Type: String
+    Description: solution ID
+  DynamoDBBillingMode:
+    Type: String
+    Description: Option for DynamoDB tables with PAY_PER_REQUEST or PROVISIONED billing modes.
+    Default: PAY_PER_REQUEST
+    AllowedValues:
+    - PAY_PER_REQUEST
+    - PROVISIONED
+  DynamoDBEnablePointInTimeRecovery:
+    Type: String
+    Description: Whether to enable Point in Time Recovery on the table
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  DynamoDBEnableServerSideEncryption:
+    Type: String
+    Description: Enable server side encryption powered by KMS.
+    Default: 'true'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  AppSyncApiName:
+    Type: String
+    Description: The name of the AppSync API
+    Default: RealTimeLiveSportsAPI
+  APIKeyExpirationEpoch:
+    Type: Number
+    Description: The epoch time in seconds when the API Key should expire. Setting
+      this to 0 will default to 7 days from the deployment date. Setting this to -1
+      will not create an API Key.
+    Default: 0
+    MinValue: -1
+  CreateAPIKey:
+    Type: Number
+    Description: The boolean value to control if an API Key will be created or not.
+      If the value is set to 0 no API Key will be created.
+    Default: 0
+    MinValue: 0
+    MaxValue: 1
+  env:
+    Type: String
+    Description: The environment name. e.g. Dev, Test, or Production
+    Default: NONE
+  S3DeploymentBucket:
+    Type: String
+    Description: The S3 bucket containing all deployment assets for the project.
+  S3DeploymentBucketRegional:
+    Type: String
+    Description: The S3 bucket containing all regional deployment assets for the project.
+  S3DeploymentRootKey:
+    Type: String
+    Description: An S3 key relative to the S3DeploymentBucket that points to the root
+      of the deployment directory.
+Resources:
+  AppSyncServicenRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: appsync.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub AppSyncServicenRole-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/RealTime_Live_Sports_Update_Using_AWS_AppSync/api/${AppSyncApiName}
+          
+  GraphQLAPI:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      Name: !Sub ${SolutionId}-${AppSyncApiName}-${env}
+      AuthenticationType: API_KEY
+      AdditionalAuthenticationProviders: 
+      - AuthenticationType: AWS_IAM
+  GraphQLAPIKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId: !GetAtt 'GraphQLAPI.ApiId'
+      Description: realtimesports_api_key
+      Expires:
+        Fn::If:
+        - APIKeyExpirationEpochIsPositive
+        - Ref: APIKeyExpirationEpoch
+        - 1621420630
+  NoneDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt 'GraphQLAPI.ApiId'
+      Name: NONE
+      Type: NONE
+  AuthManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy for managing the RealTimeLiveSports configuration allowing CRUD on all types
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Action: 'appsync:GraphQL'
+            Resource: !Sub [
+                        "arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${x0}/*", {
+                            x0: !GetAtt 'GraphQLAPI.ApiId'
+                        }
+                    ]
+  GraphQLSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId: !GetAtt 'GraphQLAPI.ApiId'
+      DefinitionS3Location: !Sub s3://${S3DeploymentBucketRegional}/${S3DeploymentRootKey}/schema.graphql
+  Sport:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        SolutionId:
+          Ref: SolutionId
+        DynamoDBBillingMode:
+          Ref: DynamoDBBillingMode
+        DynamoDBEnablePointInTimeRecovery:
+          Ref: DynamoDBEnablePointInTimeRecovery
+        DynamoDBEnableServerSideEncryption:
+          Ref: DynamoDBEnableServerSideEncryption
+        AppSyncApiName:
+          Ref: AppSyncApiName
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-sport.template
+    DependsOn:
+    - GraphQLSchema
+    - NoneDataSource
+  Season:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        SolutionId:
+          Ref: SolutionId
+        DynamoDBBillingMode:
+          Ref: DynamoDBBillingMode
+        DynamoDBEnablePointInTimeRecovery:
+          Ref: DynamoDBEnablePointInTimeRecovery
+        DynamoDBEnableServerSideEncryption:
+          Ref: DynamoDBEnableServerSideEncryption
+        AppSyncApiName:
+          Ref: AppSyncApiName
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-season.template  
+    DependsOn:
+    - GraphQLSchema
+    - NoneDataSource
+  Competition:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        SolutionId:
+          Ref: SolutionId
+        DynamoDBBillingMode:
+          Ref: DynamoDBBillingMode
+        DynamoDBEnablePointInTimeRecovery:
+          Ref: DynamoDBEnablePointInTimeRecovery
+        DynamoDBEnableServerSideEncryption:
+          Ref: DynamoDBEnableServerSideEncryption
+        AppSyncApiName:
+          Ref: AppSyncApiName
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-competition.template  
+    DependsOn:
+    - GraphQLSchema
+    - NoneDataSource
+  Stage:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        SolutionId:
+          Ref: SolutionId
+        DynamoDBBillingMode:
+          Ref: DynamoDBBillingMode
+        DynamoDBEnablePointInTimeRecovery:
+          Ref: DynamoDBEnablePointInTimeRecovery
+        DynamoDBEnableServerSideEncryption:
+          Ref: DynamoDBEnableServerSideEncryption
+        AppSyncApiName:
+          Ref: AppSyncApiName
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-stage.template  
+    DependsOn:
+    - GraphQLSchema
+    - NoneDataSource
+  Game:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        SolutionId:
+          Ref: SolutionId
+        DynamoDBBillingMode:
+          Ref: DynamoDBBillingMode
+        DynamoDBEnablePointInTimeRecovery:
+          Ref: DynamoDBEnablePointInTimeRecovery
+        DynamoDBEnableServerSideEncryption:
+          Ref: DynamoDBEnableServerSideEncryption
+        AppSyncApiName:
+          Ref: AppSyncApiName
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-game.template  
+    DependsOn:
+    - GraphQLSchema
+    - NoneDataSource
+  GameEvent:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        SolutionId:
+          Ref: SolutionId
+        DynamoDBBillingMode:
+          Ref: DynamoDBBillingMode
+        DynamoDBEnablePointInTimeRecovery:
+          Ref: DynamoDBEnablePointInTimeRecovery
+        DynamoDBEnableServerSideEncryption:
+          Ref: DynamoDBEnableServerSideEncryption
+        AppSyncApiName:
+          Ref: AppSyncApiName
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-gameEvent.template  
+    DependsOn:
+    - GraphQLSchema
+    - NoneDataSource
+  ConnectionStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AppSyncApiId: !GetAtt 'GraphQLAPI.ApiId'
+        APIKeyExpirationEpoch:
+          Ref: APIKeyExpirationEpoch
+        CreateAPIKey:
+          Ref: CreateAPIKey
+        env:
+          Ref: env
+        S3DeploymentBucket:
+          Ref: S3DeploymentBucketRegional
+        S3DeploymentRootKey:
+          Ref: S3DeploymentRootKey
+        GetAttGraphQLAPIApiId: !GetAtt 'GraphQLAPI.ApiId'
+      TemplateURL: !Sub https://${S3DeploymentBucket}-reference.s3.amazonaws.com/${S3DeploymentRootKey}/real-time-live-sports-updates-using-aws-appsync-api-stack-connection.template  
+    DependsOn:
+    - GraphQLSchema
+    - Competition
+    - Stage
+    - Sport
+    - Season
+    - Game
+    - GameEvent
+Outputs:
+  GraphQLAPIIdOutput:
+    Description: GraphQL API ID.
+    Value: !GetAtt 'GraphQLAPI.ApiId'
+    Export:
+      Name: 
+        Fn::Join:
+        - ":"
+        - - Ref: AWS::StackName
+          - GraphQLApiId
+  GraphQLAPIEndpointOutput:
+    Description:  GraphQL API endpoint.
+    Value:
+      Fn::GetAtt:
+      - GraphQLAPI
+      - GraphQLUrl
+    Export:
+      Name:
+        Fn::Join:
+        - ":"
+        - - Ref: AWS::StackName
+          - GraphQLApiEndpoint
+  GraphQLAPIKeyOutput:
+    Description:  GraphQL API key. Provide via 'x-api-key' header.
+    Value:
+      Fn::GetAtt:
+      - GraphQLAPIKey
+      - ApiKey
+    Export:
+      Name:
+        Fn::Join:
+        - ":"
+        - - Ref: AWS::StackName
+          - GraphQLApiKey
+    Condition: ShouldCreateAPIKey
+  AuthManagedPolicyOutput:
+    Description:  Managed Policy allowing all GraphQL operation
+    Value:
+      Ref: AuthManagedPolicy
+  GameTableStreamArn:
+    Description: Game DynamoDB Table Stream
+    Value: !GetAtt 'Game.Outputs.GetAttGameTableStreamArn'
+      
+Mappings: {}
+Conditions:
+  ShouldUsePayPerRequestBilling:
+    Fn::Equals:
+    - Ref: DynamoDBBillingMode
+    - PAY_PER_REQUEST
+  ShouldUsePointInTimeRecovery:
+    Fn::Equals:
+    - Ref: DynamoDBEnablePointInTimeRecovery
+    - 'true'
+  ShouldUseServerSideEncryption:
+    Fn::Equals:
+    - Ref: DynamoDBEnableServerSideEncryption
+    - 'true'
+  ShouldCreateAPIKey:
+    Fn::Equals:
+    - Ref: CreateAPIKey
+    - 1
+  APIKeyExpirationEpochIsPositive:
+    Fn::And:
+    - Fn::Not:
+      - Fn::Equals:
+        - Ref: APIKeyExpirationEpoch
+        - -1
+    - Fn::Not:
+      - Fn::Equals:
+        - Ref: APIKeyExpirationEpoch
+        - 0

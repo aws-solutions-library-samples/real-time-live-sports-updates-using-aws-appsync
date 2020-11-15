@@ -1,0 +1,341 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0102-ingestion-poller-stack) - AWS StepFunctions and Lambda  Resources for ingestion in RealTime Live Sports Update Using AWS AppSync. Version %%VERSION%%
+
+Metadata: {}
+Parameters:
+    SolutionId:
+        Type: String
+        Description: solution ID
+        AllowedPattern : "[a-zA-Z0-9]+"
+    env:
+        Type: String
+        Description: The environment name. e.g. Dev, Test, or Production
+        Default: NONE
+    S3DeploymentBucket:
+        Type: String
+        Description: The S3 bucket containing all deployment assets for the project.
+    S3DeploymentRootKey:
+        Type: String
+        Description: An S3 key relative to the S3DeploymentBucket that points to the root of the deployment directory.
+    EventStream:
+        Type: String
+        Description: EventStream name
+        AllowedPattern : ".+"
+    EventStreamArn:
+        Type: String
+        Description: EventStream Arn
+        AllowedPattern : ".+"
+    RootStackName:
+        Type: String
+        Description: Root Stack Name
+        AllowedPattern : ".+"
+    CloudWatchRule:
+        Type: String
+        Default: NONE
+        Description: "Schedule Expression for scheduling today's game ingestion"
+    WaitIntervalInSec:
+        Type: Number
+        Description: periodically call api for game events (5 to 600) seconds
+        MinValue: 5
+        MaxValue: 600
+        Default: 10
+    GraphQLApiKey:
+        Type: String
+        Description: GraphQL ApiKey
+        AllowedPattern : ".+"
+    GraphQLAPIEndpoint:
+        Type: String
+        Description: GraphQL Api Endpoint
+        AllowedPattern : ".+"
+    GraphQLAPIID:
+        Type: String
+        Description: GraphQL Api ID
+        AllowedPattern : ".+"
+Resources:
+            
+  ################################################################################
+  #
+  # Ingestion Poller Stack resources (execution role, lambda, and state machine)
+  #
+  ################################################################################          
+
+  IngestionPollerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: SO0102 - Lambda function to ingest game live events to the system
+      Environment:
+        Variables:
+          ENV:
+            Ref: env
+          REGION:
+            Ref: AWS::Region
+          ANALYTICS_REALTIMESPORTSCLIENTKINESIS_KINESISSTREAMARN: !Ref EventStreamArn
+          REALTIMELIVESPORTSUPDATE_KINESISSTREAM_NAME: !Ref EventStream
+      Handler: index.handler
+      FunctionName: !Sub ${RootStackName}-Ingestion-${env}
+      Role: !GetAtt 'IngestionFunctionRole.Arn'
+      Code:
+        S3Bucket: !Ref S3DeploymentBucket
+        S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "ingestion-function.zip"]]
+      Runtime: nodejs12.x
+      Timeout: 60
+      MemorySize: 256
+
+  IngestionFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub Ingestion-Function-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+          - Effect: Allow
+            Action:
+            - kinesis:PutRecord
+            - kinesis:PutRecords
+            - kinesis:DescribeStream
+            - kinesis:DescribeStreamSummary
+            - kinesis:RegisterStreamConsumer
+            - kinesis:ListShards
+            - kinesis:MergeShards
+            Resource:
+            - !Ref EventStreamArn
+          - Effect: Allow
+            Action:
+              - kinesis:DescribeStreamConsumer
+              - kinesis:SubscribeToShard
+            Resource:
+            - !Ref EventStreamArn
+            
+            
+  StateMachineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+        AssumeRolePolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            -
+              Effect: "Allow"
+              Action:
+                  - "sts:AssumeRole"
+              Principal:
+                  Service:
+                      - !Sub "states.${AWS::Region}.amazonaws.com"
+        Path: /
+        Policies:
+            -
+                PolicyName: !Sub "${RootStackName}-statemachine-service-role"
+                PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                        -
+                            Effect: "Allow"
+                            Action:
+                                - "lambda:InvokeFunction"
+                            Resource:
+                                - !GetAtt IngestionPollerFunction.Arn
+            
+                
+  IngestionPollerStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+        StateMachineName: !Sub "${RootStackName}-ingestion-poller"
+        RoleArn: !GetAtt StateMachineServiceRole.Arn
+        DefinitionString:
+            !Sub
+                - |-
+                    {
+                      "Comment": "Workflow that runs a polling job of a sport data provier's api and monitors the job until it completes.",
+                      "StartAt": "WaitForDueDate",
+                      "States": {
+                        "WaitForDueDate": {
+                          "Type": "Wait",
+                          "TimestampPath": "$.planned_game_start",
+                          "Next": "Get Game Data"
+                        },
+                        "Wait X Seconds": {
+                          "Type": "Wait",
+                          "Seconds": ${x0},
+                          "Next": "Get Game Data"
+                        },
+                        "Get Game Data": {
+                          "Type": "Task",
+                          "Resource": "${x1}",
+                          "Next": "Game Complete?",
+                          "InputPath": "$.game",
+                          "ResultPath": "$.status",
+                          "Retry": [
+                            {
+                              "ErrorEquals": ["States.ALL"],
+                              "IntervalSeconds": 1,
+                              "MaxAttempts": 3,
+                              "BackoffRate": 2
+                            }
+                          ]
+                        },
+                        "Game Complete?": {
+                          "Type": "Choice",
+                          "Choices": [
+                            {
+                              "Variable": "$.status",
+                              "StringEquals": "error",
+                              "Next": "Game Failed"
+                            },
+                            {
+                              "Variable": "$.status",
+                              "StringEquals": "completed",
+                              "Next": "Game Ended"
+                            }
+                          ],
+                          "Default": "Wait X Seconds"
+                        },
+                        "Game Failed": {
+                          "Type": "Fail",
+                          "Cause": "Game Data Ingestion Failed",
+                          "Error": "Get Game Data returned FAILED"
+                        },
+                        "Game Ended": {
+                          "Type": "Succeed"
+                        }
+                      }
+                    }
+                -
+                    {
+                        x0: !Ref WaitIntervalInSec,
+                        x1: !GetAtt IngestionPollerFunction.Arn
+                    }
+
+  
+  # Scheduler for today's games
+  GameSchedulerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: SO0102 - Lambda function to schedule ingestion of game's live events to the system
+      Environment:
+        Variables:
+          ENV:
+            Ref: env
+          REGION:
+            Ref: AWS::Region
+          STATEMACHINE_ARN: !Ref IngestionPollerStateMachine
+          API_REALTIMESPORTSCLIENT_GRAPHQLAPIENDPOINTOUTPUT: !Ref GraphQLAPIEndpoint
+      Handler: index.handler
+      FunctionName: !Sub ${RootStackName}-GameScheduler-${env}
+      Role: !GetAtt 'GameSchedulerRole.Arn'
+      Code:
+        S3Bucket: !Ref S3DeploymentBucket
+        S3Key: !Join ["/", [Ref: "S3DeploymentRootKey",  "scheduler-function.zip"]]
+      Runtime: nodejs12.x
+      Timeout: 60
+      MemorySize: 256
+  GameSchedulerRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W11
+          reason: Override the IAM role to allow support:* for logs:PutLogEvents resource on its permissions policy
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: !Sub GameScheduler-Function-Policy-${AWS::StackName}-${AWS::Region}
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+          - Effect: "Allow"
+            Action:
+              - "states:StartExecution"
+            Resource:
+              - Ref: IngestionPollerStateMachine
+          - Effect: Allow
+            Action: 'appsync:GraphQL'
+            Resource: 
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Game", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Stage", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Season", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Competition", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Sport", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "FeedConfig", apiId: !Ref GraphQLAPIID}]
+            - !Sub ["arn:aws:appsync:${AWS::Region}:${AWS::AccountId}:apis/${apiId}/types/${typeName}/*", {typeName: "Query", apiId: !Ref GraphQLAPIID}]
+
+  
+  
+
+  CloudWatchEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Schedule rule for Game Scheduler Lambda
+      ScheduleExpression:
+        Ref: CloudWatchRule
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - GameSchedulerFunction
+          - Arn
+        Id:
+          Ref: GameSchedulerFunction
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: GameSchedulerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - CloudWatchEvent
+        - Arn
+
+
+
+
+  #
+  # Outputs
+  #
+                
+Outputs:
+    IngestionPollerFunction:
+      Value:
+        Fn::GetAtt:
+        - IngestionPollerFunction
+        - Arn
+    
+    IngestionPollerStateMachine:
+      Value:
+        Ref: IngestionPollerStateMachine
