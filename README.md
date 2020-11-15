@@ -1,17 +1,92 @@
-## My Project
+# Real-Time Live Sports Updates Using AWS AppSync
+This solution is designed to demonstrate a serverless solution that enables media customer to deliver real-time live sports updates to web and mobile application via AppSync subscriptions.
+Many companies in M&E have mobile and web apps that enable their customers to view sports scores, track live game/match info, receive fantasy sports updates and enable their subscribers to chat.
+The common use cases for delivering real-time sports data to customers are:
+-	A person is viewing a screen in the mobile or web app that is showing live game updates. An event occurs (e.g. goal scored, time left in game, player injured) and the M&E company must push this to the view in the application.
+-	In a fantasy sports league, the scores for a fantasy team are changing with each play in the game. Their points, standings, status in the head-to-head competition against another player in the fantasy league will continue to change. These changes are delivered to live viewers of the fantasy game.
+-	Also, in fantasy sports, members of a league want to chat. They want to talk trash or banter with their friends. Building chat requires the right real-time platform.
+-	When mobile app users do not have an app in the foreground, the M&E company wants to deliver updates via a push notification. The solution must recognize whether a viewer is actively watching the live updates with the app in the foreground or the app is in the background. If the app is in the background, the live update should be delivered as a push notification.
 
-TODO: Fill this README out!
 
-Be sure to:
+## Running unit tests for customization
+* Clone the repository, then make the desired code changes
+* Next, run unit tests to make sure added customization passes the tests
+```
+cd ./deployment
+chmod +x ./run-unit-tests.sh  \n
+./run-unit-tests.sh \n
+```
 
-* Change the title in this README
-* Edit your repository description on GitHub
+## Building distributable for customization
+* Configure the bucket name of your target Amazon S3 distribution bucket
+```
+export DIST_OUTPUT_BUCKET=my-bucket-name # bucket where customized code will reside
+export SOLUTION_NAME=my-solution-name
+export VERSION=my-version # version number for the customized code
+```
+_Note:_ You would have to create an S3 bucket with the prefix 'my-bucket-name-<aws_region>'; aws_region is where you are testing the customized solution. Also, the assets in bucket should be publicly accessible.
 
-## Security
+* Now build the distributable:
+```
+chmod +x ./build-s3-dist.sh \n
+./build-s3-dist.sh $DIST_OUTPUT_BUCKET $SOLUTION_NAME $VERSION \n
+```
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+* Deploy the distributable to an Amazon S3 bucket in your account. _Note:_ you must have the AWS Command Line Interface installed.
+```
+aws s3 cp ./dist/ s3://my-bucket-name-<aws_region>/$SOLUTION_NAME/$VERSION/ --recursive --acl bucket-owner-full-control --profile aws-cred-profile-name \n
+```
 
-## License
+* Get the link of the solution template uploaded to your Amazon S3 bucket.
+* Deploy the solution to your account by launching a new AWS CloudFormation stack using the link of the solution template in Amazon S3.
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+*** 
 
+## File Structure
+
+```
+|-deployment/
+  |-build-s3-dist.sh                                                              [ shell script for packaging distribution assets ]
+  |-run-unit-tests.sh                                                             [ shell script for executing unit tests ]
+  |-real-time-live-sports-updates-using-aws-appsync.template                      [ Main solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-competition.yaml    [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-connection.yaml     [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-gameEvent.yaml      [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-game.yaml           [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-season.yaml         [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-sport.yaml          [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack-stage.yaml          [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-api-stack.yaml                [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-ingestion-api-stack.yaml      [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-ingestion-poller-stack.yaml   [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-notifications-stack.yaml      [ Additional solution CloudFormation deployment template ]
+  |-real-time-live-sports-updates-using-aws-appsync-simulations-stack.yaml        [ Additional solution CloudFormation deployment template ]
+|-source/
+  |-api/       [ GraphQL API related assets ]
+    |- resolvers/                     [ Contains resolvers for GraphQL API based on AppSync ]
+    |- schema.graphql                 [ GraphQL API schema ]
+  |-functions/          [ Lambda functions ]
+  |-webapp/             [ Web App based on React ]
+
+```
+
+Each Function follows the structure of:
+
+```
+|-function-name/
+  |-lib/
+    |-[service module libraries and unit tests]
+  |-index.js [injection point for service]
+  |-package.json
+```
+
+***
+
+
+Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+
+    http://www.apache.org/licenses/
+
+or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License.
