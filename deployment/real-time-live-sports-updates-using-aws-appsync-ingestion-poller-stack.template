@@ -62,6 +62,13 @@ Resources:
 
   IngestionPollerFunction:
     Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W89
+          reason: Override the Lambda functions should be deployed inside a VPC
+        - id: W92
+          reason: Override the Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
     Properties:
       Description: SO0102 - Lambda function to ingest game live events to the system
       Environment:
@@ -229,6 +236,13 @@ Resources:
   # Scheduler for today's games
   GameSchedulerFunction:
     Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W89
+          reason: Override the Lambda functions should be deployed inside a VPC
+        - id: W92
+          reason: Override the Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
     Properties:
       Description: SO0102 - Lambda function to schedule ingestion of game's live events to the system
       Environment:

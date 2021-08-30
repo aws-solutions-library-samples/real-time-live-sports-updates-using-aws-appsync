@@ -46,10 +46,9 @@ Parameters:
     Default: RealTimeLiveSportsAPI
   APIKeyExpirationEpoch:
     Type: Number
-    Description: The epoch time in seconds when the API Key should expire. Setting
-      this to 0 will default to 7 days from the deployment date. Setting this to -1
-      will not create an API Key.
-    Default: 365
+    Description: The API Key expiration date in seconds since Epoch. Setting
+      this to 0 will default to 2022-05-31. Default value is 2021-12-31.
+    Default: 1640952000
     MinValue: -1
   WaitIntervalInSec:
     Type: Number
@@ -154,16 +153,6 @@ Conditions:
   UseIngestionPoller: !Equals [ !Ref DeployIngestLambdaPoller, "true" ]
   UseSimulationsResources: !Equals [ !Ref DeploySimulationStack, "true" ]
   UseNotificationssResources: !Not [!Equals [!Ref PinpointAppId, ""]]
-  APIKeyExpirationEpochIsPositive:
-    Fn::And:
-    - Fn::Not:
-      - Fn::Equals:
-        - Ref: APIKeyExpirationEpoch
-        - -1
-    - Fn::Not:
-      - Fn::Equals:
-        - Ref: APIKeyExpirationEpoch
-        - 0
 
 Resources:
 
@@ -191,6 +180,7 @@ Resources:
       ]
       Parameters:
           CreateAPIKey: 1
+          APIKeyExpirationEpoch: !Ref APIKeyExpirationEpoch
           DynamoDBBillingMode: !FindInMap ["DynamoDB","LiveSportsTables","DynamoDBBillingMode"]
           DynamoDBEnableServerSideEncryption: !FindInMap ["DynamoDB","LiveSportsTables","DynamoDBEnableServerSideEncryption"]
           S3DeploymentBucket: !FindInMap ["SourceCode", "General", "S3Bucket"]
@@ -212,6 +202,9 @@ Resources:
               -
                   id: W28
                   reason: "Table name is constructed with stack name. On update, we need to keep the existing table name."
+              -
+                  id: W78
+                  reason: "DynamoDB table should have backup enabled, should be set using PointInTimeRecoveryEnabled."
     Properties:
       BillingMode: !FindInMap ["DynamoDB","Preprocess","DynamoDBBillingMode"]
       AttributeDefinitions:
@@ -276,6 +269,13 @@ Resources:
 
   PreprocessFunction:
     Type: 'AWS::Lambda::Function'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W89
+          reason: Override the Lambda functions should be deployed inside a VPC
+        - id: W92
+          reason: Override the Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
     Properties:
       Description: SO0102 - Lambda function to preprocess events to send live updates
       Environment:

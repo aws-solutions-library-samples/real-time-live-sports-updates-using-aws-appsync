@@ -74,6 +74,13 @@ Resources:
 
   GameSimulatorFunction:
     Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W89
+          reason: Override the Lambda functions should be deployed inside a VPC
+        - id: W92
+          reason: Override the Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
     Properties:
       Description: Real-Time Sports Update - Lambda function to ingest simulated game live events
       Environment:
@@ -240,6 +247,13 @@ Resources:
   # Scheduler for today's games
   GameSimulatorSchedulerFunction:
     Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W89
+          reason: Override the Lambda functions should be deployed inside a VPC
+        - id: W92
+          reason: Override the Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
     Properties:
       Description: SO0102 - Lambda function to schedule simulations of game's live events
       Environment:
@@ -471,6 +485,13 @@ Resources:
   ################################################################################
   GameSimulatorInitFunction:
     Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+        - id: W89
+          reason: Override the Lambda functions should be deployed inside a VPC
+        - id: W92
+          reason: Override the Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
     DependsOn:
     - GameSimulatorWebsiteBucket
     Properties:

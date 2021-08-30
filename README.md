@@ -82,8 +82,12 @@ Each Function follows the structure of:
 
 ***
 
+## Collection of operational metrics
+This solution collects anonymous operational metrics to help AWS improve the quality of features of the solution. For more information, including how to disable this capability, please see the [Implementation Guide](https://docs.aws.amazon.com/solutions/latest/real-time-live-sports-updates-using-aws-appsync/appendix-h.html).
 
-Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+***
+
+Copyright 2021 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
 Licensed under the Apache License Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
 

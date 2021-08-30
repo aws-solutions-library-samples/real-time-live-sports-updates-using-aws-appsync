@@ -9,7 +9,7 @@
     "graphql": "latest",
     "graphql-tag": "latest",
     "json-mapper-json": "latest",
-    "axios": "^0.19.2"
+    "axios": "latest"
   },
   "devDependencies": {
     "aws-sdk-mock": "*",
